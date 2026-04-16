@@ -52,3 +52,10 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+/.vs/AI.Learning.Lab/CopilotIndices/17.12.68.61481
+/.vs/AI.Learning.Lab/DesignTimeBuild
+/.vs/AI.Learning.Lab/FileContentIndex
+*.v2
+*.suo
+*.json
+/.vs/ProjectEvaluation

@@ -1,0 +1,18 @@
+﻿NORTHSTAR TECH SOLUTIONS - EMPLOYEE HANDBOOK 2024
+
+SECTION 1: ANNUAL LEAVE (HOLIDAYS)
+Employees are entitled to 27 days of paid annual leave per calendar year. This is separate from public holidays. 
+Unused leave can be carried over to the next year, but only up to a maximum of 5 days. Any carry-over days must be used by March 31st of the following year or they will be forfeited.
+
+SECTION 2: REMOTE WORK POLICY
+Northstar Tech operates on a "Hub & Home" model. Employees are required to be in the physical office on Tuesdays and Wednesdays for "Collaboration Days." For the remaining three days, employees may choose to work from home or the office. 
+A one-time home-office stipend of £500 is provided to all new hires to purchase ergonomic furniture.
+
+SECTION 3: TRAVEL & EXPENSES
+Business travel must be pre-approved by a Department Head. 
+For mileage, employees can claim 45p per mile for the first 100 miles of a journey, and 25p per mile thereafter. 
+Meal expenses are capped at £15 for breakfast, £20 for lunch, and £40 for dinner. Alcohol is not a reimbursable expense.
+
+SECTION 4: LEARNING & DEVELOPMENT
+Every engineer has an annual "Growth Budget" of £2,000. This can be used for certifications (like Azure or AWS), books, or attending tech conferences. 
+To claim this, you must submit a "Learning Plan" to your manager at the start of each quarter.

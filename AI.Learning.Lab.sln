@@ -7,6 +7,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "InventoryAgent", "AI.Learni
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RAGUsingSemanticeKernel", "RAGUsingSemanticeKernel\RAGUsingSemanticeKernel.csproj", "{FCD2DAD8-48A2-4C35-8F1F-AA32C70C5D9F}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RAGAndPineConeVectorDataBase", "RAGAndPineConeVectorDataBase\RAGAndPineConeVectorDataBase.csproj", "{DBAE5F75-C6FD-4271-9D6E-AFD5503A9D13}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -21,6 +23,10 @@ Global
 		{FCD2DAD8-48A2-4C35-8F1F-AA32C70C5D9F}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{FCD2DAD8-48A2-4C35-8F1F-AA32C70C5D9F}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{FCD2DAD8-48A2-4C35-8F1F-AA32C70C5D9F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{DBAE5F75-C6FD-4271-9D6E-AFD5503A9D13}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DBAE5F75-C6FD-4271-9D6E-AFD5503A9D13}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DBAE5F75-C6FD-4271-9D6E-AFD5503A9D13}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DBAE5F75-C6FD-4271-9D6E-AFD5503A9D13}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

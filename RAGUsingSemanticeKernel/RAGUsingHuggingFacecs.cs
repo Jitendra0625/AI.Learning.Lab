@@ -1,13 +1,7 @@
-﻿using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.ChatCompletion;
-using Microsoft.SemanticKernel.Connectors.OpenAI;
-using System.Net;
-using Microsoft.SemanticKernel.Connectors.InMemory;
+﻿using Microsoft.Extensions.AI;
 using Microsoft.Extensions.VectorData;
-using Microsoft.SemanticKernel.Connectors.HuggingFace;
-using Microsoft.Extensions.AI;
-using static System.Net.Mime.MediaTypeNames;
-using Microsoft.SemanticKernel.Text;
+using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.Connectors.InMemory;
 
 namespace RAGUsingSemanticeKernel
 {
@@ -104,7 +98,7 @@ namespace RAGUsingSemanticeKernel
             Use the context to answer. If not found, say you don't know.
             Context: {contextText}
             Question: {userQuery}
-            """);
+            """);//  Use Kernel.InvokePrompt for quick one-off answer and GetChatMessageContentAsync for more complex conversation with memory and system prompt. This will generate the answer based on the context we retrieved from vector store and the user query. If the context does not contain relevant information, it will respond accordingly.
 
                 return Convert.ToString(result);
             }

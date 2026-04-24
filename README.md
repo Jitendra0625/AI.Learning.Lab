@@ -2,7 +2,7 @@
 
 Agentic AI Using Semantic Kernel
 
-OmniRAG.core is the project where I am having different RAG pipleines mentioned in this 
+OmniRAG.core is the project where I am having different RAG pipleines mentioned in this
 
 
 
@@ -73,4 +73,44 @@ Why: Allows the user to ask follow-up questions like "Tell me more about that 20
 💡 Project Reflection
 
 The biggest challenge overcome was handling Dependency Injection and Namespace conflicts between experimental Semantic Kernel packages and the official Pinecone SDK. This project proves that a hybrid approach—using SDKs for data and Frameworks for reasoning—is the most stable path for AI applications.
+
+
+
+
+
+
+
+
+
+
+
+\--------------------------------------------------------------------------------------------------------------------------------------------------------
+
+**Project: OmniGuard Compliance Engine**
+
+**Architecture:** Parent-Document Retrieval (PDR) with Hybrid Vector Storage
+
+**The Problem**
+
+Regulatory banking documents (like the FCA Handbook) are too large for standard RAG. Basic chunking loses legal context, and Pinecone metadata limits (40KB) prevent storing full authoritative pages.
+
+**The Solution**
+
+Hierarchical Indexing: Implemented a "Parent-Child" relationship.
+
+Vector Search (The Child): Small 512-character semantic chunks for high-precision retrieval using local BGE-ONNX embeddings.
+
+Context Expansion (The Parent): Automated "hop" from a vector hit to a local Document Store to retrieve the full, un-chunked page text.
+
+Metadata Filtering: Used Pinecone filtering to isolate semantic chunks from structural parent anchors.
+
+**Tech Stack**
+
+.NET 9 \& Semantic Kernel 1.74.0-preview
+
+Pinecone (Serverless Vector Database)
+
+BGE-Small-v1.5 (Local ONNX Embedding Model)
+
+iText9 (Streaming PDF Ingestion)
 

@@ -1,0 +1,31 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Use stable 9.0 for the host to match your TargetFramework -->
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.7" />
+    <PackageReference Include="System.Diagnostics.DiagnosticSource" Version="10.0.7" />
+
+    <!-- Align all Semantic Kernel components to the same version -->
+    <PackageReference Include="Microsoft.SemanticKernel" Version="1.74.0" />
+    <PackageReference Include="Microsoft.SemanticKernel.Connectors.Onnx" Version="1.74.0-alpha" />
+    <PackageReference Include="Microsoft.SemanticKernel.Connectors.OpenAI" Version="1.74.0" />
+    <PackageReference Include="Microsoft.SemanticKernel.Connectors.Pinecone" Version="1.74.0-preview" />
+    
+    <!-- PDF Tooling -->
+    <PackageReference Include="itext" Version="9.0.0" />
+</ItemGroup>
+
+  <ItemGroup>
+    <None Update="Data\FCA_MCOB.pdf">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>

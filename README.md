@@ -168,3 +168,65 @@ Auditability: Every query and Judge reasoning is logged to AuditLog.txt.
 
 Resiliency: Implemented a local keyword fallback if the vector store is unreachable.
 
+
+
+\## 🌊 **Agentic Governance \& Multi-Model Audit**
+
+OmniGuard has evolved from a linear RAG pipeline into a multi-agent ecosystem. By moving to an \*\*Agentic Workflow\*\*, we ensure that no response is delivered without independent verification.
+
+
+
+\### The Multi-Agent Workforce
+
+We have implemented a specialized "Research \& Audit" loop using \*\*Semantic Kernel Agents\*\*:
+
+
+
+1\.  \*\*The Researcher Agent (Lead)\*\*
+
+&#x20;   \*   \*\*Role:\*\* Performs semantic search across Pinecone and local parent stores.
+
+&#x20;   \*   \*\*Capability:\*\* Deconstructs complex user queries into sub-tasks and synthesizes information from multiple MCOB chapters.
+
+2\.  \*\*The Auditor Agent (The Critic)\*\*
+
+&#x20;   \*   \*\*Role:\*\* Acts as a compliance firewall.
+
+&#x20;   \*   \*\*Logic:\*\* Executes a "Chain-of-Verification." It compares the Researcher’s output against the \*raw\* parent text to detect hallucinations or omissions.
+
+3\.  \*\*The Governance Lead (.agent.md)\*\*
+
+&#x20;   \*   \*\*Role:\*\* Enforces architectural standards (PDR patterns, privacy rules) during the coding process.
+
+
+
+\### Workflow: The "Self-Correcting" Loop
+
+\- \*\*Step 1:\*\* User asks a vague regulatory question.
+
+\- \*\*Step 2:\*\* Researcher pulls Child-Parent context.
+
+\- \*\*Step 3:\*\* Auditor verifies context vs. answer. 
+
+
+
+
+
+\## The Evolution of OmniGuard
+
+
+
+
+
+| Wave | Milestone | Focus | Key Tech |
+
+| :--- | :--- | :--- | :--- |
+
+| \*\*W1\*\* | \*\*The Core\*\* | Hybrid Storage \& .NET 9 Setup | Pinecone, BGE-Small |
+
+| \*\*W2\*\* | \*\*Precision\*\* | Parent-Document Retrieval (PDR) | iText9, Hierarchical Indexing |
+
+| \*\*W3\*\* | \*\*Architecture\*\* | Agent-Ready Codebase | .agent.md, Semantic Kernel |
+
+| \*\*W4\*\* | \*\*Governance\*\* | Multi-Agent Audit \& Validation | Researcher/Auditor Agent Loop 
+

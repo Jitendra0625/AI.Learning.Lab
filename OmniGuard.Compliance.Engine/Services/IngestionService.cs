@@ -82,7 +82,7 @@ namespace OmniGuard.Compliance.Engine.Services
                     PageNumber = i,
                     Vector = parentEmbed[0].Vector
                 };
-               await collection.UpsertAsync(parent);
+               await collection.UpsertAsync(parent);// Not for this example due to large text and we are using free version of pinecone we are stoing parent document in local but for exmaple purpose saving some infrmaitn of parent just to show case hoe parent and child can be store in indexes
 
                 // --- STEP 2: Create and Store CHILDREN (Searchable Chunks) ---
 #pragma warning disable SKEXP0050

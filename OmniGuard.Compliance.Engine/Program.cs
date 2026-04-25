@@ -5,7 +5,9 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.VectorData;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
+using OmniGuard.Compliance.Engine.Models;
 using OmniGuard.Compliance.Engine.Services;
+using System;
 using NativePineconeClient = Pinecone.PineconeClient;
 
 // Disable all telemetry that causes the DiagnosticsHelper to crash in .NET 9
@@ -42,6 +44,7 @@ builder.Logging.AddConsole(); // Only use the Console for now
 // 1. Register the Local Embedding Generator
 builder.Services.AddSingleton(embeddingGenerator);
 builder.Services.AddSingleton(chatService);
+builder.Services.AddSingleton(kernel);
 
 // 2. Register Pinecone Client
 #pragma warning disable SKEXP0020 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
@@ -55,9 +58,10 @@ builder.Services.AddSingleton(sp =>
 // 3. Register our Custom Services
 builder.Services.AddSingleton<IngestionService>();
 builder.Services.AddSingleton<RetrievalService>();
+builder.Services.AddSingleton<OmniGuardAgents>();
 
 var host = builder.Build();
-Console.WriteLine("Ingestion already done, then say no to run the retrieval or yes to to ingestion and then retrieval");
+Console.WriteLine("Ingestion already done, then say no to run the retrieval or yes to to ingestion and then direct retireval say retrieve or for multiagent to retriev say team");
 var response = Console.ReadLine();
 if (response.ToLower().Equals("yes"))
 {
@@ -71,17 +75,36 @@ if (response.ToLower().Equals("yes"))
 }
 
 
-// Run retrieval
-var retrieval = host.Services.GetRequiredService<RetrievalService>();
-
-Console.WriteLine("\n--- AI Compliance Engine ---");
-Console.Write("Enter your question (e.g. Mortgage Rates): ");
-string? userQuestion = Console.ReadLine();
-
-if (!string.IsNullOrEmpty(userQuestion))
+if (response.ToLower().Equals("retrieve"))
 {
-    Console.WriteLine("Searching authoritative documents...");
-    var fullContext = await retrieval.GetFinalResponseAsync(userQuestion);
+    // Run retrieval
+    var retrieval = host.Services.GetRequiredService<RetrievalService>();
 
-    Console.WriteLine(fullContext);
+    Console.WriteLine("\n--- AI Compliance Engine ---");
+    Console.Write("Enter your question (e.g. Mortgage Rates): ");
+    string? userQuestion = Console.ReadLine();
+
+    if (!string.IsNullOrEmpty(userQuestion))
+    {
+        Console.WriteLine("Searching authoritative documents...");
+        var fullContext = await retrieval.GetFinalResponseAsync(userQuestion);
+
+        Console.WriteLine(fullContext);
+    }
 }
+#region Running Retrieval and Judge using multi agents
+if (response.ToLower().Equals("team"))
+{
+    var agents = host.Services.GetRequiredService<OmniGuardAgents>();
+    Console.WriteLine("OmniGuard Multi-Agent System Ready.");
+    Console.Write("Query: ");
+    var query = Console.ReadLine();
+
+    if (!string.IsNullOrEmpty(query))
+    {
+        // This starts the "conversation" between Researcher and Auditor
+        await agents.RunComplianceFlowAsync(query);
+    }
+}
+
+#endregion

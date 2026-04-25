@@ -14,6 +14,9 @@ using OneOf.Types;
 using System.Text.RegularExpressions;
 using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel.Connectors.OpenAI;
+using Microsoft.SemanticKernel;
+using System.ComponentModel;
+using Microsoft.ML.OnnxRuntimeGenAI;
 
 namespace OmniGuard.Compliance.Engine.Services
 {
@@ -121,8 +124,8 @@ namespace OmniGuard.Compliance.Engine.Services
                     Temperature = 0.4F,
 
                 };
-                var response= await _chatService.GetChatMessageContentsAsync(judgePrompt, settings);
-                return (rawContext, response.Count()==0? "Validation failed.":response[0].Content);
+                var response = await _chatService.GetChatMessageContentsAsync(judgePrompt, settings);
+                return (rawContext, response.Count() == 0 ? "Validation failed." : response[0].Content);
             }
             catch (Exception ex)
             {
@@ -132,7 +135,17 @@ namespace OmniGuard.Compliance.Engine.Services
         }
 
 
-        public async Task<string> GetFinalResponseAsync(string userQuery, string indexName= "retail-bank-regulatory-index")
+        /// <summary>
+        /// This is the method which is like normal fucntion call and then calling another fucntion  Judge to get the confidence. For multiagent we are not calling GetJudgedContextAsync in GetSearchPolicyAsync 
+        /// Rhe researche agent will auto call the kernel fucntion GetSearchPolicyAsync will use the context and then pass the context to auditor agent to get the confidenc on response.
+        /// This is Linear RAG Pipeline The Concept: A "Scripted" or "Hard-coded" workflow.Structure: A single service executes steps in a fixed order (Search->Judge->Respond).
+        /// The New Approach: "Agentic Orchestration". The Concept: A "Dynamic" or "Autonomous" workflow.
+        /// Structure: Multiple specialized agents(Researcher & Auditor) collaborate in a shared state(the Chat).
+        /// </summary>
+        /// <param name="userQuery"></param>
+        /// <param name="indexName"></param>
+        /// <returns></returns>
+        public async Task<string> GetFinalResponseAsync( string userQuery, string indexName = "retail-bank-regulatory-index")
         {
             try
             {
@@ -159,7 +172,7 @@ namespace OmniGuard.Compliance.Engine.Services
             catch (Exception ex)
             {
                 // Fallback to basic logic if the Judge is offline
-                Console.WriteLine($"⚠️ Judge offline: {ex.Message}");
+                Console.WriteLine($"Judge offline: {ex.Message}");
                 return await SearchWithFallbackAsync(userQuery);
             }
         }
@@ -176,7 +189,43 @@ namespace OmniGuard.Compliance.Engine.Services
 
         }
 
+        #region Auto Agent calls
+        [KernelFunction]
+        [Description("Searches the MCOB banking handbook for legal clauses and policy text.")] // Make it as kernel function and will be be treated by agent as auto policy search tool. In multi agents scenario the agent auto inokves it
+        public async Task<string> GetSearchPolicyAsync([Description("The specific banking topic or rule to search for")] string userQuery, string indexName = "retail-bank-regulatory-index")
+        {
+            try
+            {
+                var rawContext = await GetComplianceAnswerAsync(userQuery, indexName);
+                //Multi agent will call this GetSearchPolicyAsync first and then the Auditor agent in OmniGuardAgant class will the instruction given to find the confidence.
+
+                //// Try the AI Judge first
+                //var (context, reasoning) = await GetJudgedContextAsync(userQuery, rawContext);
+                //if (reasoning.Contains("Medium", StringComparison.OrdinalIgnoreCase))
+                //{
+                //    // High-value Senior Logic: Provide context but add a "Compliance Warning"
+                //    var warning = $"""
+                //                    COMPLIANCE ADVISORY: The engine found relevant sections regarding '{userQuery}', 
+                //                    but the authoritative evidence is partial. 
+
+                //                    [Judge Reasoning]: {reasoning}
+
+                //                    [Supporting Context]:
+                //                    {context}
+                //                    """;
+                //    return warning;
+                //}
+                return rawContext;
+            }
+            catch (Exception ex)
+            {
+                //// Fallback to basic logic if the Judge is offline
+                //Console.WriteLine($"Judge offline: {ex.Message}");
+                //return await SearchWithFallbackAsync(userQuery);
+            }
+            return string.Empty;
+        }
+
     }
-
-
 }
+#endregion

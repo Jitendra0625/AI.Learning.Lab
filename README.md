@@ -92,7 +92,7 @@ Architecting Reliable AI for Retail Banking
 
 OmniGuard is a high-precision Retrieval-Augmented Generation (RAG) engine built to process large-scale regulatory documents (like the 550-page FCA MCOB Handbook). Unlike "basic" RAG demos, OmniGuard is engineered for authority, privacy, and architectural governance.
 
-**🏗️ The "Senior" Architecture**
+**🏗️ The Architecture**
 
 **1. Parent-Document Retrieval (PDR)**
 

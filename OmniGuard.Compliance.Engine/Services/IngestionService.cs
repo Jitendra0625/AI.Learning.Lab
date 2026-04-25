@@ -20,6 +20,7 @@ using NativePineconeClient = Pinecone.PineconeClient;
 using iText.Layout.Element;
 using Microsoft.SemanticKernel.Embeddings;
 using static System.Net.Mime.MediaTypeNames;
+using Microsoft.SemanticKernel.ChatCompletion;
 namespace OmniGuard.Compliance.Engine.Services
 {
     /// <summary>
@@ -29,6 +30,7 @@ namespace OmniGuard.Compliance.Engine.Services
     {
         private readonly PineconeVectorStore _vectorStore;
         private readonly IEmbeddingGenerator<string, Embedding<float>> _embeddingGenerator;
+       
         public IngestionService(NativePineconeClient client, IEmbeddingGenerator<string, Embedding<float>> embeddingGenerator)
         {
             _vectorStore = new PineconeVectorStore(client);

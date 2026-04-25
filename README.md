@@ -86,31 +86,85 @@ The biggest challenge overcome was handling Dependency Injection and Namespace c
 
 \--------------------------------------------------------------------------------------------------------------------------------------------------------
 
-**Project: OmniGuard Compliance Engine**
+**OmniGuard: Enterprise Compliance RAG Engine**
 
-**Architecture:** Parent-Document Retrieval (PDR) with Hybrid Vector Storage
+Architecting Reliable AI for Retail Banking
 
-**The Problem**
+OmniGuard is a high-precision Retrieval-Augmented Generation (RAG) engine built to process large-scale regulatory documents (like the 550-page FCA MCOB Handbook). Unlike "basic" RAG demos, OmniGuard is engineered for authority, privacy, and architectural governance.
 
-Regulatory banking documents (like the FCA Handbook) are too large for standard RAG. Basic chunking loses legal context, and Pinecone metadata limits (40KB) prevent storing full authoritative pages.
+**🏗️ The "Senior" Architecture**
 
-**The Solution**
+**1. Parent-Document Retrieval (PDR)**
 
-Hierarchical Indexing: Implemented a "Parent-Child" relationship.
+**S**tandard RAG often suffers from "Context Loss" because small text chunks lose the surrounding legal meaning.
 
-Vector Search (The Child): Small 512-character semantic chunks for high-precision retrieval using local BGE-ONNX embeddings.
+The Strategy: I implemented a hierarchical "Parent-Child" link.
 
-Context Expansion (The Parent): Automated "hop" from a vector hit to a local Document Store to retrieve the full, un-chunked page text.
+Execution: We search using granular Child vectors for high-precision matching but retrieve the full Parent page text to ensure the LLM has 100% authoritative context.
 
-Metadata Filtering: Used Pinecone filtering to isolate semantic chunks from structural parent anchors.
+**2. Hybrid Storage Pattern**
 
-**Tech Stack**
+To bypass the 40KB metadata limits of vector databases (like Pinecone) and enhance security:
 
-.NET 9 \& Semantic Kernel 1.74.0-preview
+Vector Store: Pinecone (Serverless) stores mathematical "Child" embeddings.
 
-Pinecone (Serverless Vector Database)
+Document Store: A secure local file system stores the full "Parent" authoritative text.
 
-BGE-Small-v1.5 (Local ONNX Embedding Model)
+The Link: A shared ParentId bridges the cloud math with the local truth.
 
-iText9 (Streaming PDF Ingestion)
+**3. Multi-Model Validation (The "Judge" Pattern)**
+
+To eliminate hallucinations in a banking environment:
+
+The Logic: Every retrieval is audited by a secondary Hugging Face LLM (The Judge).
+
+The Output: The Judge assigns a Confidence Score (High/Medium/Low). If evidence is partial, the system triggers a Compliance Advisory rather than a definitive answer.
+
+**4. Agentic Governance (.agent.md)**
+
+The repository is Agent-Ready. I have codified senior architectural standards into a .agent.md file. This ensures that any AI assistant (like GitHub Copilot) enforces our specific PDR and safety patterns during the development lifecycle.
+
+**🛠️ Tech Stack**
+
+Runtime: .NET 9
+
+Orchestration: Semantic Kernel (1.74.0-preview)
+
+Vector Database: Pinecone (Serverless)
+
+Embedding Model: Local BGE-Small-v1.5 (via ONNX) for data privacy.
+
+Validation Model: Hugging Face (Llama-3 / Mistral)
+
+PDF Engine: iText9 (Streaming ingestion for 500+ page documents)
+
+**🚀 Getting Started**
+
+Ingestion
+
+The engine uses a Streaming Pipeline to prevent memory overflow.
+
+Place your PDF in /Data.
+
+Run the Ingestion Service to generate local Parent files and Cloud vectors.
+
+Retrieval
+
+**csharp**
+
+// Search with automatic Judge validation
+
+var result = await retrievalService.GetJudgedContextAsync(query, indexName);
+
+Console.WriteLine(result.Confidence);
+
+Use code with caution.
+
+**🛡️ Why this is "Production-Ready"**
+
+Data Sovereignty: Embeddings are generated locally; full text never leaves the secure store.
+
+Auditability: Every query and Judge reasoning is logged to AuditLog.txt.
+
+Resiliency: Implemented a local keyword fallback if the vector store is unreachable.
 

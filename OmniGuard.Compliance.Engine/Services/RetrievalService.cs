@@ -166,7 +166,7 @@ namespace OmniGuard.Compliance.Engine.Services
         public async Task<string> SearchWithFallbackAsync(string userQuery)
         {
 
-            Console.WriteLine($"⚠️ Vector Store offline: Falling back to Local Store...");
+            Console.WriteLine($"Vector Store offline: Falling back to Local Store...");
 
             // Fallback: Simple Keyword search in our ParentStore text files
             var localFiles = Directory.GetFiles(_parentStorePath, "*.txt");

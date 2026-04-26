@@ -86,6 +86,12 @@ The biggest challenge overcome was handling Dependency Injection and Namespace c
 
 \--------------------------------------------------------------------------------------------------------------------------------------------------------
 
+
+
+**Note:** OmniGuard is an independent research project developed in my personal architectural lab. It is designed as a Proof of Concept (PoC) for enterprise-grade AI governance and is not affiliated with any commercial entity.
+
+
+
 **OmniGuard: Enterprise Compliance RAG Engine**
 
 Architecting Reliable AI for Retail Banking
@@ -120,7 +126,7 @@ The Logic: Every retrieval is audited by a secondary Hugging Face LLM (The Judge
 
 The Output: The Judge assigns a Confidence Score (High/Medium/Low). If evidence is partial, the system triggers a Compliance Advisory rather than a definitive answer.
 
-**4. Agentic Governance (.agent.md)**
+**4. Agentic Governance (.agent.md) and Multi-Agent Governance (Researcher/Auditor)**
 
 The repository is Agent-Ready. I have codified senior architectural standards into a .agent.md file. This ensures that any AI assistant (like GitHub Copilot) enforces our specific PDR and safety patterns during the development lifecycle.
 
@@ -206,7 +212,7 @@ We have implemented a specialized "Research \& Audit" loop using \*\*Semantic Ke
 
 \- \*\*Step 2:\*\* Researcher pulls Child-Parent context.
 
-\- \*\*Step 3:\*\* Auditor verifies context vs. answer. 
+\- \*\*Step 3:\*\* Auditor verifies context vs. answer.
 
 
 
@@ -228,5 +234,5 @@ We have implemented a specialized "Research \& Audit" loop using \*\*Semantic Ke
 
 | \*\*W3\*\* | \*\*Architecture\*\* | Agent-Ready Codebase | .agent.md, Semantic Kernel |
 
-| \*\*W4\*\* | \*\*Governance\*\* | Multi-Agent Audit \& Validation | Researcher/Auditor Agent Loop 
+| \*\*W4\*\* | \*\*Governance\*\* | Multi-Agent Audit \& Validation | Researcher/Auditor Agent Loop
 

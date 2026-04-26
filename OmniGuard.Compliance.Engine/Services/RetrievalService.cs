@@ -35,16 +35,17 @@ namespace OmniGuard.Compliance.Engine.Services
             _client = client;
             _chatService = chatService;
         }
-        public async Task<string> GetComplianceAnswerAsync(string userQuery, string indexName = "retail-bank-regulatory-index")
+        public async Task<(string fullContext, List<int> pageNumbers)> GetComplianceAnswerAsync(string userQuery, string indexName = "retail-bank-regulatory-index")
         {
             var queryEmbeddings = await _embeddingGenerator.GenerateAsync(new[] { userQuery });
             float[] queryVector = queryEmbeddings[0].Vector.ToArray();
+            List<int> pageNumber = new List<int>();
 
             // 
             // We ONLY want 'child' records for the semantic match
             var searchOptions = new Pinecone.QueryRequest // This class is provided by Pincone
             {
-                TopK = 10,// // Look deeper into the document . get top 5 or number given mmatchs 
+                TopK = 3,// // Look deeper into the document . get top 5 or number given mmatchs 
                 Vector = queryVector,
                 IncludeMetadata = true,
                 IncludeValues = true,
@@ -91,14 +92,15 @@ namespace OmniGuard.Compliance.Engine.Services
                         contextBuilder.AppendLine($"\n[AUTHORITATIVE POLICY - PAGE {match.Metadata["PageNumber"].ToString()}]");
                         contextBuilder.AppendLine(fullPageText);
                         contextBuilder.AppendLine(new string('=', 30));
+                        pageNumber.Add(Convert.ToInt32(match.Metadata["PageNumber"].ToString()));
                     }
                     processedParent.Add(parentId);
                 }
             }
 
-            return contextBuilder.Length > 0
+            return (contextBuilder.Length > 0
                 ? contextBuilder.ToString()
-                : "No matching regulatory policy found in the engine.";
+                : "No matching regulatory policy found in the engine.", pageNumber);
         }
 
         public async Task<(string context, string validationReasioning)> GetJudgedContextAsync(string userQuery, string rawContext)
@@ -109,13 +111,14 @@ namespace OmniGuard.Compliance.Engine.Services
                 var judgePrompt = $"""
                                     SYSTEM: You are a Bank Compliance Auditor. 
                                     TASK: Evaluate if the provided CONTEXT contains the specific answer for the USER_QUERY.
+
         
                                     USER_QUERY: {userQuery}
                                     CONTEXT: {rawContext}
 
                                     RESPONSE FORMAT:
                                     CONFIDENCE: [High/Medium/Low]
-                                    REASON: [Brief explanation]
+                                    REASON: [Brief explanation one or max two lines]
                                     """;
 
                 // Call the LLM to to gett the confidence
@@ -145,38 +148,59 @@ namespace OmniGuard.Compliance.Engine.Services
         /// <param name="userQuery"></param>
         /// <param name="indexName"></param>
         /// <returns></returns>
-        public async Task<string> GetFinalResponseAsync( string userQuery, string indexName = "retail-bank-regulatory-index")
+        public async Task<OmniGuardResponse> GetFinalResponseAsync( string userQuery, string indexName = "retail-bank-regulatory-index")
         {
             try
             {
-                var rawContext = await GetComplianceAnswerAsync(userQuery, indexName);
+                var (rawContext, pageNumber) = await GetComplianceAnswerAsync(userQuery, indexName);
 
                 // Try the AI Judge first
                 var (context, reasoning) = await GetJudgedContextAsync(userQuery, rawContext);
-                if (reasoning.Contains("Medium", StringComparison.OrdinalIgnoreCase))
+                //if (reasoning.Contains("Medium", StringComparison.OrdinalIgnoreCase))
+                //{
+                //    // High-value Senior Logic: Provide context but add a "Compliance Warning"
+                //    var warning = $"""
+                //                    COMPLIANCE ADVISORY: The engine found relevant sections regarding '{userQuery}', 
+                //                    but the authoritative evidence is partial. 
+
+                //                    [Judge Reasoning]: {reasoning}
+
+                //                    [Supporting Context]:
+                //                    {context}
+                //                    """;
+                //    return warning;
+                //}
+                //return $"[JUDGE ANALYSIS]: {reasoning}\n\n{context}";
+
+                string confidence = "Low";
+                if (reasoning.Contains("High", StringComparison.OrdinalIgnoreCase)) confidence = "High";
+                else if (reasoning.Contains("Medium", StringComparison.OrdinalIgnoreCase)) confidence = "Medium";
+
+                return new OmniGuardResponse
                 {
-                    // High-value Senior Logic: Provide context but add a "Compliance Warning"
-                    var warning = $"""
-                                    COMPLIANCE ADVISORY: The engine found relevant sections regarding '{userQuery}', 
-                                    but the authoritative evidence is partial. 
-
-                                    [Judge Reasoning]: {reasoning}
-
-                                    [Supporting Context]:
-                                    {context}
-                                    """;
-                    return warning;
-                }
-                return $"[JUDGE ANALYSIS]: {reasoning}\n\n{context}";
+                    Answer = context,
+                    AuditorReasoning = reasoning,
+                    Confidence = confidence,
+                    RetrievedPages = pageNumber,
+                  //  ParentId = rawContext.ParentId
+                };
             }
             catch (Exception ex)
             {
                 // Fallback to basic logic if the Judge is offline
                 Console.WriteLine($"Judge offline: {ex.Message}");
-                return await SearchWithFallbackAsync(userQuery);
+                var result = await SearchWithFallbackAsync(userQuery);
+                return new OmniGuardResponse
+                {
+                    Answer = result.fullText,
+                    AuditorReasoning = string.Empty,
+                    Confidence = string.Empty,
+                    RetrievedPages = result.pageNumber,
+                    //  ParentId = rawContext.ParentId
+                };
             }
         }
-        public async Task<string> SearchWithFallbackAsync(string userQuery)
+        public async Task<(string fullText, List<int> pageNumber)> SearchWithFallbackAsync(string userQuery)
         {
 
             Console.WriteLine($"Vector Store offline: Falling back to Local Store...");
@@ -185,7 +209,7 @@ namespace OmniGuard.Compliance.Engine.Services
             var localFiles = Directory.GetFiles(_parentStorePath, "*.txt");
             var bestFile = localFiles.FirstOrDefault(f => File.ReadAllText(f).Contains(userQuery, StringComparison.OrdinalIgnoreCase));// get any first file contining the part of user query
 
-            return bestFile != null ? await File.ReadAllTextAsync(bestFile) : "No information available.";
+            return (bestFile != null ? await File.ReadAllTextAsync(bestFile) : "No information available.",new List<int>());// As we are reading from local, I am retrunuing page numbers as 0
 
         }
 
@@ -215,7 +239,7 @@ namespace OmniGuard.Compliance.Engine.Services
                 //                    """;
                 //    return warning;
                 //}
-                return rawContext;
+                return rawContext.fullContext;
             }
             catch (Exception ex)
             {
@@ -225,7 +249,17 @@ namespace OmniGuard.Compliance.Engine.Services
             }
             return string.Empty;
         }
+        #endregion
 
     }
+    internal class OmniGuardResponse
+    {
+        public string Answer { get; set; }
+        public string AuditorReasoning { get; set; }
+        public string Confidence { get; set; } // High, Medium, Low
+        public List<int> RetrievedPages { get; set; } = new();   
+        public string SourceId { get; set; }   // ParentId
+    }
+
 }
-#endregion
+

@@ -5,7 +5,8 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.VectorData;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
-using OmniGuard.Compliance.Engine.Models;
+using OmniGuard.Compliance.Engine.Agents;
+using OmniGuard.Compliance.Engine.Evaluation;
 using OmniGuard.Compliance.Engine.Services;
 using System;
 using NativePineconeClient = Pinecone.PineconeClient;
@@ -59,6 +60,7 @@ builder.Services.AddSingleton(sp =>
 builder.Services.AddSingleton<IngestionService>();
 builder.Services.AddSingleton<RetrievalService>();
 builder.Services.AddSingleton<OmniGuardAgents>();
+builder.Services.AddSingleton<EvaluationService>();
 
 var host = builder.Build();
 Console.WriteLine("Ingestion already done, then say no to run the retrieval or yes to to ingestion and then direct retireval say retrieve or for multiagent to retriev say team");
@@ -105,6 +107,17 @@ if (response.ToLower().Equals("team"))
         // This starts the "conversation" between Researcher and Auditor
         await agents.RunComplianceFlowAsync(query);
     }
+}
+
+#endregion
+
+#region Run Evaluation on Test Data
+if (response.ToLower().Equals("test"))
+{
+    var evaluationService = host.Services.GetRequiredService<EvaluationService>();
+    Console.WriteLine("Evaluation is in progress");
+
+    await evaluationService.RunEvaliuationSuiteAsync();
 }
 
 #endregion

@@ -6,7 +6,7 @@ using OmniGuard.Compliance.Engine.Services;
 using Microsoft.SemanticKernel.Connectors.OpenAI;
 using System.Diagnostics.Metrics;
 
-namespace OmniGuard.Compliance.Engine.Models
+namespace OmniGuard.Compliance.Engine.Agents
 {
     internal class OmniGuardAgents
     {
@@ -115,7 +115,7 @@ namespace OmniGuard.Compliance.Engine.Models
                 if (message.Message.Content.Contains("Low")) Console.ForegroundColor = ConsoleColor.Red;
                 if (message.Message.Content.Contains("Medium")) Console.ForegroundColor = ConsoleColor.Yellow;
                 Console.WriteLine($"\n[AUDITOR]: {message.Message.Content}");
-               
+
 
                 // 4. Handle the "High/Low" logic here
                 if (message.Message.Content.Contains("High"))
@@ -125,5 +125,5 @@ namespace OmniGuard.Compliance.Engine.Models
         }
 
     }
-    
+
 }

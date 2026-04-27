@@ -1,26 +1,12 @@
-﻿using Microsoft.Extensions.AI;
-using Microsoft.SemanticKernel.Connectors.Pinecone;
-using OmniGuard.Compliance.Engine.Models;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using iText;
-using iText.Kernel.Pdf;
+﻿using iText.Kernel.Pdf;
 //using Pinecone;
 using iText.Kernel.Pdf.Canvas.Parser;
+using Microsoft.Extensions.AI;
+using Microsoft.SemanticKernel.Connectors.Pinecone;
 using Microsoft.SemanticKernel.Text;
-using Microsoft.SemanticKernel.Data;
-using Microsoft.Extensions.VectorData;
-using iText.Signatures;
-using PineconeClient = Microsoft.SemanticKernel.Connectors.Pinecone;
+using OmniGuard.Compliance.Engine.Models;
 // We need the NATIVE client for the VectorStore constructor
 using NativePineconeClient = Pinecone.PineconeClient;
-using iText.Layout.Element;
-using Microsoft.SemanticKernel.Embeddings;
-using static System.Net.Mime.MediaTypeNames;
-using Microsoft.SemanticKernel.ChatCompletion;
 namespace OmniGuard.Compliance.Engine.Services
 {
     /// <summary>
@@ -82,7 +68,7 @@ namespace OmniGuard.Compliance.Engine.Services
                     PageNumber = i,
                     Vector = parentEmbed[0].Vector
                 };
-               await collection.UpsertAsync(parent);// Not for this example due to large text and we are using free version of pinecone we are stoing parent document in local but for exmaple purpose saving some infrmaitn of parent just to show case hoe parent and child can be store in indexes
+               await collection.UpsertAsync(parent);// Note for this example due to large text and we are using free version of pinecone we are stoing parent document in local but for exmaple purpose saving some infrmaitn of parent just to show case hoe parent and child can be store in indexes
 
                 // --- STEP 2: Create and Store CHILDREN (Searchable Chunks) ---
 #pragma warning disable SKEXP0050

@@ -51,7 +51,7 @@ builder.Services.AddSingleton(kernel);
 #pragma warning disable SKEXP0020 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
 builder.Services.AddSingleton(sp =>
     new NativePineconeClient(apiKey:
-        Environment.GetEnvironmentVariable("Pinecone_APIKey") // as uisng old package so hase to give environment name
+        Environment.GetEnvironmentVariable("Pinecone_APIKey") 
 
     ));
 #pragma warning restore SKEXP0020 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
@@ -61,23 +61,60 @@ builder.Services.AddSingleton<IngestionService>();
 builder.Services.AddSingleton<RetrievalService>();
 builder.Services.AddSingleton<OmniGuardAgents>();
 builder.Services.AddSingleton<EvaluationService>();
+builder.Services.AddSingleton<HybridIngestionService>();
 
 var host = builder.Build();
-Console.WriteLine("Ingestion already done, then say no to run the retrieval or yes to to ingestion and then direct retireval say retrieve or for multiagent to retriev say team");
+Console.WriteLine($"""
+    For Vector Ingestion Press 1.
+    For Hybrid Ingestion Press 2.
+    For Vector base Retrieval Press 3.
+    For Hybrid (Vevotr and Keyword) Search Press 4.
+    Running Retrieval and Judge using multi agents Press 5
+    For Evaluation Press 6.
+    """);
 var response = Console.ReadLine();
-if (response.ToLower().Equals("yes"))
+if (response.ToLower().Equals("1"))
 {
 
     // --- RUN THE INDEXER ---
     var ingestion = host.Services.GetRequiredService<IngestionService>();
 
-    Console.WriteLine("Starting Ingestion for first 5 pages...");
+    Console.WriteLine("Starting Ingestion for first 200 pages...");
     await ingestion.IndexLargePolicyAsync();
     Console.WriteLine(" Ingestion Complete.");
 }
 
+if (response.ToLower().Equals("2"))
+{
 
-if (response.ToLower().Equals("retrieve"))
+    // --- RUN THE HYRBRID INDEXER ---
+    var ingestion = host.Services.GetRequiredService<HybridIngestionService>();
+
+    Console.WriteLine("Starting Ingestion for first 200 pages...");
+    await ingestion.GenerateHybridVecors();
+    Console.WriteLine(" Hybrid Ingestion Complete.");
+}
+
+
+if (response.ToLower().Equals("3"))
+{
+    // Run retrieval
+    var retrieval = host.Services.GetRequiredService<RetrievalService>();
+
+    Console.WriteLine("\n--- AI Compliance Engine ---");
+    Console.Write("Enter your question (e.g. Mortgage Rates): ");
+    string? userQuestion = Console.ReadLine();
+
+    if (!string.IsNullOrEmpty(userQuestion))
+    {
+        Console.WriteLine("Searching authoritative documents...");
+        var fullContext = await retrieval.GetFinalResponseAsync(userQuestion);
+
+        Console.WriteLine(fullContext);
+    }
+}
+
+if (response.ToLower().Equals("4"))
 {
     // Run retrieval
     var retrieval = host.Services.GetRequiredService<RetrievalService>();
@@ -95,7 +132,7 @@ if (response.ToLower().Equals("retrieve"))
     }
 }
 #region Running Retrieval and Judge using multi agents
-if (response.ToLower().Equals("team"))
+if (response.ToLower().Equals("5"))
 {
     var agents = host.Services.GetRequiredService<OmniGuardAgents>();
     Console.WriteLine("OmniGuard Multi-Agent System Ready.");
@@ -112,7 +149,7 @@ if (response.ToLower().Equals("team"))
 #endregion
 
 #region Run Evaluation on Test Data
-if (response.ToLower().Equals("test"))
+if (response.ToLower().Equals("6"))
 {
     var evaluationService = host.Services.GetRequiredService<EvaluationService>();
     Console.WriteLine("Evaluation is in progress");

@@ -236,3 +236,5 @@ We have implemented a specialized "Research \& Audit" loop using \*\*Semantic Ke
 
 | \*\*W4\*\* | \*\*Governance\*\* | Multi-Agent Audit \& Validation | Researcher/Auditor Agent Loop
 
+| \*\*W5\*\* | \*\*Validation\*\* | Golden Dataset Benchmarking | FCA MCOB Ground Truth, C# CLI Eval |
+

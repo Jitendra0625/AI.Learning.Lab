@@ -1,11 +1,12 @@
-﻿using iText.Kernel.Pdf;
+﻿using Dapper;
+using iText.Kernel.Pdf;
 using iText.Kernel.Pdf.Canvas.Parser;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.VectorData;
 using Microsoft.SemanticKernel.Connectors.Pinecone;
 using Microsoft.SemanticKernel.Text;
 using OmniGuard.Compliance.Engine.Models;
-
 
 // We need the NATIVE client for the VectorStore constructor
 using NativePineconeClient = Pinecone.PineconeClient;
@@ -25,12 +26,14 @@ namespace OmniGuard.Compliance.Engine.Services
            
         private readonly IEmbeddingGenerator<string,Embedding<float>> _embeddingGenerator;
         private readonly PineconeVectorStore _pineconeVectorStore;
+        private readonly SQLLiteService _sqlLiteDB;
         private readonly NativePineconeClient _client;
-        public HybridIngestionService(IEmbeddingGenerator<string, Embedding<float>> embeddingGenerator, NativePineconeClient client)
+        public HybridIngestionService(IEmbeddingGenerator<string, Embedding<float>> embeddingGenerator, NativePineconeClient client, SQLLiteService sqlLiteDB)
         {
             _embeddingGenerator = embeddingGenerator;
             _pineconeVectorStore = new PineconeVectorStore(client);
             _client = client;
+            _sqlLiteDB = sqlLiteDB;
         }
 
         public async Task GenerateHybridVecors()
@@ -39,7 +42,13 @@ namespace OmniGuard.Compliance.Engine.Services
             string pdfPath = Path.Combine(AppContext.BaseDirectory, @"Data\FCA_MCOB.pdf");
             var pdfReader= new PdfReader(pdfPath);
             var pdfDoc= new PdfDocument(pdfReader);
-            for (int i = 1; i <= pdfDoc.GetNumberOfPages(); i++)
+
+
+            // as we will be creating the chunk text inSQL lite db for keyword search. Let we create the local Db here
+            await _sqlLiteDB.PrepareLexicalLayer();
+
+            // Proceed with chunking and storing the childs vectors in pinecone and chunked text in sql lite for hybrid search
+            for (int i = 1; i <= Math.Min(200,pdfDoc.GetNumberOfPages()); i++)
             {
                 var pageText=PdfTextExtractor.GetTextFromPage(pdfDoc.GetPage(i));
 
@@ -102,9 +111,11 @@ namespace OmniGuard.Compliance.Engine.Services
                 {
                     await collection.UpsertAsync(child);
                 }
-
-                Console.WriteLine($" Page {i}: 1 Parent and {childRecords.Count} Children stored in pinecone vecotr store.");
+                await _sqlLiteDB.IngestionInSQLLite(childRecords);
+                Console.WriteLine($" Page {i}: 1 Parent and {childRecords.Count} Children stored in pinecone vector store and in SQL DB.");
             }
         }
+
+       
     }
 }

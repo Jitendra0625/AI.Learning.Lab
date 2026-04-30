@@ -216,6 +216,30 @@ We have implemented a specialized "Research \& Audit" loop using \*\*Semantic Ke
 
 
 
+Wave 6. High-Precision Hybrid Retrieval:
+
+OmniGuard has evolved into a Hybrid Engine, solving the "Lexical Gap" where semantic search alone misses exact legal terminology (like specific MCOB paragraph numbers).
+
+1\. The "Consensus" Retrieval ModelTo achieve bank-grade precision, I implemented a dual-stream search architecture:
+
+&#x09;Semantic Expert (Pinecone): Captures the intent and meaning of the regulatory query using BGE-small vectors.
+
+&#x09;Lexical Expert (SQLite FTS5): Captures the exact terminology (e.g., "MCOB 4.10.3") using a local BM25-ranked index.
+
+&#x09;Fusion Logic: Results are merged using Reciprocal Rank Fusion (RRF). This "Consensus" pattern ensures that if both the semantic and keyword engines agree on a Parent Document, it is prioritized for the Auditor.
+
+
+
+Updated Tech Stack (Wave 6)Lexical Engine: 
+
+SQLite FTS5 (Local Full-Text Search)
+
+Reasoning: Hugging Face Inference API
+
+Fusion Algorithm: Reciprocal Rank Fusion (RRF)
+
+
+
 
 
 \## The Evolution of OmniGuard
@@ -237,4 +261,8 @@ We have implemented a specialized "Research \& Audit" loop using \*\*Semantic Ke
 | \*\*W4\*\* | \*\*Governance\*\* | Multi-Agent Audit \& Validation | Researcher/Auditor Agent Loop
 
 | \*\*W5\*\* | \*\*Validation\*\* | Golden Dataset Benchmarking | FCA MCOB Ground Truth, C# CLI Eval |
+
+| \*\*W6\*\* | \*\*Hybrid Performance\*\* | Consensus Retrieval \& RRF | SQLite FTS5, RRF, HF API |
+
+
 

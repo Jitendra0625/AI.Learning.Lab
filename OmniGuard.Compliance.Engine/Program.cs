@@ -62,6 +62,8 @@ builder.Services.AddSingleton<RetrievalService>();
 builder.Services.AddSingleton<OmniGuardAgents>();
 builder.Services.AddSingleton<EvaluationService>();
 builder.Services.AddSingleton<HybridIngestionService>();
+builder.Services.AddSingleton<HybridRetrievalService>();
+builder.Services.AddSingleton<SQLLiteService>();
 
 var host = builder.Build();
 Console.WriteLine($"""
@@ -108,8 +110,8 @@ if (response.ToLower().Equals("3"))
     if (!string.IsNullOrEmpty(userQuestion))
     {
         Console.WriteLine("Searching authoritative documents...");
-        var fullContext = await retrieval.GetFinalResponseAsync(userQuestion);
-
+        var fullContext = await retrieval.GetComplianceAnswerAsync(userQuestion);
+        Console.ForegroundColor = ConsoleColor.Green;
         Console.WriteLine(fullContext);
     }
 }
@@ -117,7 +119,7 @@ if (response.ToLower().Equals("3"))
 if (response.ToLower().Equals("4"))
 {
     // Run retrieval
-    var retrieval = host.Services.GetRequiredService<RetrievalService>();
+    var hybridRetrival = host.Services.GetRequiredService<HybridRetrievalService>();
 
     Console.WriteLine("\n--- AI Compliance Engine ---");
     Console.Write("Enter your question (e.g. Mortgage Rates): ");
@@ -125,8 +127,8 @@ if (response.ToLower().Equals("4"))
 
     if (!string.IsNullOrEmpty(userQuestion))
     {
-        Console.WriteLine("Searching authoritative documents...");
-        var fullContext = await retrieval.GetFinalResponseAsync(userQuestion);
+        Console.WriteLine("Searching authoritative documents uisng keyword and vectors...");
+        var fullContext = await hybridRetrival.GetFinalResponseAsync(userQuestion);
 
         Console.WriteLine(fullContext);
     }

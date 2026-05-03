@@ -38,7 +38,8 @@ namespace OmniGuard.Compliance.Engine.Agents
                 Arguments = new KernelArguments(new OpenAIPromptExecutionSettings
                 {
                     // This forces the agent to use its tools!
-                    FunctionChoiceBehavior = FunctionChoiceBehavior.Auto()
+                    FunctionChoiceBehavior = FunctionChoiceBehavior.Auto(),
+                    ServiceId = "HuggingFaceChat"
                 }
                 )
             };

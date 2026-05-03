@@ -238,13 +238,15 @@ namespace OmniGuard.Compliance.Engine.Services
         }
 
         #region Auto Agent calls
-        [KernelFunction]
-        [Description("Searches the MCOB banking handbook for legal clauses and policy text.")] // Make it as kernel function and will be be treated by agent as auto policy search tool. In multi agents scenario the agent auto inokves it
-        public async Task<string> GetSearchPolicyAsync([Description("The specific banking topic or rule to search for")] string userQuery, string indexName = "retail-bank-regulatory-index")
+        [KernelFunction("search_fca_rules")]
+        [Description("Search the FCA MCOB handbook for specific rules.")]// Make it as kernel function and will be be treated by agent as auto policy search tool. In multi agents scenario the agent auto inokves it
+        public async Task<string> GetSearchPolicyAsync([Description("The specific regulatory question or MCOB clause ID")] string query)
         {
             try
             {
-                var rawContext = await GetComplianceAnswerAsync(userQuery, indexName);
+                // Add this to see exactly what is arriving from the LLM
+                Console.WriteLine($"\n[DEBUG]: LLM sent to tool: {query}");
+                var rawContext = await GetComplianceAnswerAsync(query);
                 //Multi agent will call this GetSearchPolicyAsync first and then the Auditor agent in OmniGuardAgant class will the instruction given to find the confidence.
 
                 //// Try the AI Judge first

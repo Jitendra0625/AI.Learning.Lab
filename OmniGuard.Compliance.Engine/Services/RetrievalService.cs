@@ -1,22 +1,14 @@
 ﻿using Microsoft.Extensions.AI;
-using Microsoft.SemanticKernel.Connectors.Pinecone;
-// We need the NATIVE client for the VectorStore constructor
-using NativePineconeClient = Pinecone.PineconeClient;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using Microsoft.Extensions.VectorData;
-using Pinecone;
-using Pinecone.Grpc;
-using OneOf.Types;
-using System.Text.RegularExpressions;
+using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel.Connectors.OpenAI;
-using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.Connectors.Pinecone;
+using Pinecone;
 using System.ComponentModel;
-using Microsoft.ML.OnnxRuntimeGenAI;
+using System.Text;
+using System.Text.RegularExpressions;
+// We need the NATIVE client for the VectorStore constructor
+using NativePineconeClient = Pinecone.PineconeClient;
 
 namespace OmniGuard.Compliance.Engine.Services
 {

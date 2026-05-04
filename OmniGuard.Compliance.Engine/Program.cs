@@ -93,6 +93,7 @@ builder.Services.AddSingleton<HybridIngestionService>();
 builder.Services.AddSingleton<HybridRetrievalService>();
 builder.Services.AddSingleton<SQLLiteService>();
 builder.Services.AddSingleton<OmniGuardAgentsForHybridSearch>();
+builder.Services.AddSingleton<BenchmarkRunnerService>();
 
 #endregion
 
@@ -105,6 +106,7 @@ Console.WriteLine($"""
     Running Retrieval and Judge (Semantic Only) using multi agents Press 5
     Running Retrieval and Judge (Hybrid) using multi agents Press 6
     For Evaluation Press 7.
+    For Benchmark Runner Press 8.
     """);
 var response = Console.ReadLine();
 if (response.ToLower().Equals("1"))
@@ -203,6 +205,16 @@ if (response.ToLower().Equals("7"))
     Console.WriteLine("Evaluation is in progress");
 
     await evaluationService.RunEvaliuationSuiteAsync();
+}
+
+#endregion
+#region Run Benchmark for semantic only and Hybriud search on Test Data
+if (response.ToLower().Equals("8"))
+{
+    var benchMark = host.Services.GetRequiredService<BenchmarkRunnerService>();
+    Console.WriteLine("Benchmark run is in progress");
+
+    await benchMark.RunStressTestAsync();
 }
 
 #endregion

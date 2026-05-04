@@ -108,6 +108,7 @@ namespace OmniGuard.Compliance.Engine.Services
 
                 // 4. Build Final Context
                 var contextBuilder = new StringBuilder();
+                var pageNumbers= new List<int>();
                 foreach (var pId in topParentIds)
                 {
                     // Load the full page .txt file you saved earlier
@@ -116,9 +117,10 @@ namespace OmniGuard.Compliance.Engine.Services
                     contextBuilder.AppendLine($"[AUTHORITATIVE POLICY - {pId}]");
                     contextBuilder.AppendLine(fullText);
                     contextBuilder.AppendLine("---");
+                    pageNumber.Add(Convert.ToInt32(pId.Split("-page-").LastOrDefault())); // Extract page number from ParentId format "parent_Page_X"
                 }
 
-                return (contextBuilder.ToString(), new List<int>(0));
+                return (contextBuilder.ToString(), pageNumber);
             }
             catch (Exception ex)
             {

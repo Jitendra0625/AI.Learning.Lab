@@ -59,3 +59,5 @@ nunit-*.xml
 *.suo
 *.json
 /.vs/ProjectEvaluation
+*.md
+/.vs/AI.Learning.Lab

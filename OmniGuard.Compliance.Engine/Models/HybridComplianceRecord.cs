@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 namespace OmniGuard.Compliance.Engine.Models
 {
-    internal class HybridComplianceRecord
+    public class HybridComplianceRecord
     {
         [VectorStoreKey]
         public string Id { get; set; }

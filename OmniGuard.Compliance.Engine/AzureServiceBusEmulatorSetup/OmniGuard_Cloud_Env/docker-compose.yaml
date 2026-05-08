@@ -1,0 +1,22 @@
+services:
+  sqledge:
+    image: mcr.microsoft.com/azure-sql-edge:latest
+    container_name: sqledge
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "Password123!"
+  emulator:
+    image: mcr.microsoft.com/azure-messaging/servicebus-emulator:latest
+    container_name: servicebus-emulator
+    depends_on:
+      - sqledge
+    ports:
+      - "5672:5672"
+      
+    environment:
+      SQL_SERVER: sqledge
+      MSSQL_SA_PASSWORD: "Password123!"
+      ACCEPT_EULA: "Y"
+      CONFIG_PATH: "/ServiceBus_Emulator/ConfigFiles/Config.json"
+    volumes:
+      - ./config.json:/ServiceBus_Emulator/ConfigFiles/Config.json

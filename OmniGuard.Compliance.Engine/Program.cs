@@ -53,7 +53,6 @@ kernelBuilder.AddBertOnnxEmbeddingGenerator(
      ollamaClient: ollamaClientllama,
     serviceId: "ollama_service_llama" // Unique ID;
     );
-// This stops Semantic Kernel from trying to record metrics that trigger the missing method
 Kernel kernel = kernelBuilder.Build();
 #endregion
 

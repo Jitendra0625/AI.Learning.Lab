@@ -4,7 +4,7 @@ using OmniGuard.Compliance.Engine.Models;
 
 namespace OmniGuard.Compliance.Engine.Services
 {
-    internal class SQLLiteService
+    public class SQLLiteService
     {
         // Run this once before starting your ingestion
         public async Task PrepareLexicalLayer()

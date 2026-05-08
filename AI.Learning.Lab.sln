@@ -13,6 +13,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OmniRAG.Core", "OmniRAG.Cor
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OmniGuard.Compliance.Engine", "OmniGuard.Compliance.Engine\OmniGuard.Compliance.Engine.csproj", "{CA9B3F77-95AB-4FDE-B52C-5B05FE9B2C98}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Omniguard.Ingestion", "Omniguard.Ingestion\Omniguard.Ingestion.csproj", "{C32B104A-9A2C-49E0-A389-AB55AEAF59C6}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -39,8 +41,15 @@ Global
 		{CA9B3F77-95AB-4FDE-B52C-5B05FE9B2C98}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{CA9B3F77-95AB-4FDE-B52C-5B05FE9B2C98}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{CA9B3F77-95AB-4FDE-B52C-5B05FE9B2C98}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C32B104A-9A2C-49E0-A389-AB55AEAF59C6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C32B104A-9A2C-49E0-A389-AB55AEAF59C6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C32B104A-9A2C-49E0-A389-AB55AEAF59C6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C32B104A-9A2C-49E0-A389-AB55AEAF59C6}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {9C93E356-0E10-4EB8-B380-CEBF4F8C606E}
 	EndGlobalSection
 EndGlobal

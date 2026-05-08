@@ -12,7 +12,7 @@ namespace OmniGuard.Compliance.Engine.Services
     /// <summary>
     /// This class will be chunking the pdf, embedding and stroing the vectors with meta data in Pinecone
     /// </summary>
-    internal class IngestionService
+    public class IngestionService
     {
         private readonly PineconeVectorStore _vectorStore;
         private readonly IEmbeddingGenerator<string, Embedding<float>> _embeddingGenerator;

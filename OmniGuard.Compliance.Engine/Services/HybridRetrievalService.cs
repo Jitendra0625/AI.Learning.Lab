@@ -55,7 +55,7 @@ namespace OmniGuard.Compliance.Engine.Services
                 var collection = _vectorStore.GetCollection<string, HybridComplianceRecord>(indexName);
 
 
-                var semanticTask = collection.SearchAsync(queryVector, 10, searchOptions).ToListAsync().AsTask(); ;
+
 
                 //// 1. Remove common trailing punctuation
                 //char[] trimChars = { '?', '.', ',', '!', ';', ':' };
@@ -68,10 +68,12 @@ namespace OmniGuard.Compliance.Engine.Services
                 // 2. Wrap the whole thing in one set of quotes for a "Phrase Search"
                 // 3. Replace the dots with spaces because the tokenizer sees dots as spaces anyway
 
-                string sanitizedQuery = userQuery.Replace(".", " ").Replace("?", "").Replace("-", " ");
 
-                // Result: "What" "are" "the" "general" ... "MCOB" "4.4"
-                // Note: SQLite 'rank' is BM25. Lower is better.
+
+                var semanticTask = collection.SearchAsync(queryVector, 10, searchOptions).ToListAsync().AsTask(); 
+
+                string sanitizedQuery = userQuery.Replace(".", " ").Replace("?", "").Replace("-", " ");
+               
                 var keywordTask = _dbConnection.QueryAsync<dynamic>(
                     "SELECT ParentId, ChunkId, rank  FROM ComplianceChunks_FTS WHERE Content MATCH @query ORDER BY rank LIMIT 10",
                     new { query = sanitizedQuery });

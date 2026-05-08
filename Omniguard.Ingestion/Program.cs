@@ -21,7 +21,7 @@ var host = new HostBuilder()
         services.AddSingleton<NativePineconeClient>(sp =>
         {
             // This code only runs when the Function actually starts processing
-            return new NativePineconeClient("pcsk_5cmXmJ_QiniQ3YYsxjz5mR5bAGi6R4XiidzKeZUiw6ULujhQxtm1L29VaxCdeHLEZPsZeV");
+            return new NativePineconeClient("Your_PINECONEAPI");
         });
 
         // 3. Register the Embedding Generator as a LAZY factory

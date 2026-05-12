@@ -77,8 +77,9 @@ builder.Services.AddSingleton(kernel);
 // 2. Register Pinecone Client
 #pragma warning disable SKEXP0020 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
 builder.Services.AddSingleton(sp =>
+
     new NativePineconeClient(apiKey:
-        Environment.GetEnvironmentVariable("Pinecone_APIKey")
+    Environment.GetEnvironmentVariable("Pinecone_APIKey")
 
     ));
 #pragma warning restore SKEXP0020 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.

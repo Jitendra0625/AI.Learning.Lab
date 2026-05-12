@@ -84,6 +84,19 @@ namespace OmniGuard.Compliance.Engine.Services
                 var semanticList = await semanticTask;
                 var keywordList = await keywordTask;
 
+                
+                // Check if query looks like a specific rule (e.g., contains "MCOB")
+                bool isSpecificRuleQuery = userQuery.Contains("MCOB", StringComparison.OrdinalIgnoreCase);
+                
+                //If Keyword search did not find anything we will reject this search as semantic can bring some record due to cosine simmilarity and hence we put BM25 search to avoide the answer on sematic search only and there is keyword returns
+                if (isSpecificRuleQuery && !keywordList.Any())
+                {
+                    // Even if semantic search found something, we reject it because 
+                    // the literal rule code does not exist in our authoritative DB.
+                    return ("Rule not found in authoritative text.", new List<int>());
+                }
+
+
                 var fusedScores = new Dictionary<string, double>();
                 const int k = 60; // Standard RRF constant
 

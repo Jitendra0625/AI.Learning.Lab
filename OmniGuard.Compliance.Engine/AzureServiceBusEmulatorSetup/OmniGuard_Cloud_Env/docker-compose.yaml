@@ -4,7 +4,7 @@ services:
     container_name: sqledge
     environment:
       ACCEPT_EULA: "Y"
-      MSSQL_SA_PASSWORD: "Password123!"
+      MSSQL_SA_PASSWORD: "set-password"
   emulator:
     image: mcr.microsoft.com/azure-messaging/servicebus-emulator:latest
     container_name: servicebus-emulator
@@ -15,7 +15,7 @@ services:
       
     environment:
       SQL_SERVER: sqledge
-      MSSQL_SA_PASSWORD: "Password123!"
+      MSSQL_SA_PASSWORD: "set-password!"
       ACCEPT_EULA: "Y"
       CONFIG_PATH: "/ServiceBus_Emulator/ConfigFiles/Config.json"
     volumes:

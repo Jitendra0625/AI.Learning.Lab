@@ -6,17 +6,19 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.VectorData;
 using Microsoft.SemanticKernel.Connectors.Pinecone;
 using Microsoft.SemanticKernel.Text;
+using Omniguard.Ingestion;
 using OmniGuard.Compliance.Engine.Models;
+
 
 // We need the NATIVE client for the VectorStore constructor
 using NativePineconeClient = Pinecone.PineconeClient;
 
-namespace OmniGuard.Compliance.Engine.Services
+namespace Omniguard.Ingestion
 {
     /// <summary>
     /// This class will ingest vectors and keyword to allow hybrid search . parallel search that combines Semantic (Vector) Search and Lexical (Keyword) Search into a single ranked list
     /// </summary>
-    public class HybridIngestionService
+    public class HybridIngestionsService
     {
          //"""
          //   Vector Search (Dense): This uses your BGE-small embeddings to find chunks with similar meanings, even if the exact words are different.
@@ -28,7 +30,7 @@ namespace OmniGuard.Compliance.Engine.Services
         private readonly PineconeVectorStore _pineconeVectorStore;
         private readonly SQLLiteService _sqlLiteDB;
         private readonly NativePineconeClient _client;
-        public HybridIngestionService(IEmbeddingGenerator<string, Embedding<float>> embeddingGenerator, NativePineconeClient client, SQLLiteService sqlLiteDB)
+        public HybridIngestionsService(IEmbeddingGenerator<string, Embedding<float>> embeddingGenerator, NativePineconeClient client, SQLLiteService sqlLiteDB)
         {
             _embeddingGenerator = embeddingGenerator;
             _pineconeVectorStore = new PineconeVectorStore(client);
@@ -127,54 +129,52 @@ namespace OmniGuard.Compliance.Engine.Services
         //                //await Task.Yield();
         //            }
         //        }
-        public async Task GenerateHybridVecors(PdfDocument pdfToIndex = null)
+        public async Task<int> GenerateHybridVecors(int intTargetPage, string pageText)
         {
-            Console.WriteLine($"[Ingestion] Starting process for {pdfToIndex?.ToString() ?? "Default PDF"}");
+            //Console.WriteLine($"[Ingestion] Starting process for {pdfToIndex?.ToString() ?? "Default PDF"}");
 
-            PdfDocument pdfDoc = null;
-            bool shouldCloseDoc = false;
+            //PdfDocument pdfDoc = null;
+            //bool shouldCloseDoc = false;
 
-            if (pdfToIndex != null)
-            {
-                pdfDoc = pdfToIndex;
-            }
-            else
-            {
-                string pdfPath = Path.Combine(AppContext.BaseDirectory, @"Data\FCA_MCOB.pdf");
-                var pdfReader = new PdfReader(pdfPath);
-                pdfDoc = new PdfDocument(pdfReader);
-                shouldCloseDoc = true;
-            }
+            //if (pdfToIndex != null)
+            //{
+            //    pdfDoc = pdfToIndex;
+            //}
+            //else
+            //{
+            //    string pdfPath = Path.Combine(AppContext.BaseDirectory, @"Data\FCA_MCOB.pdf");
+            //    var pdfReader = new PdfReader(pdfPath);
+            //    pdfDoc = new PdfDocument(pdfReader);
+            //    shouldCloseDoc = true;
+            //}
 
             try
             {
                 await _sqlLiteDB.PrepareLexicalLayer();
                 var collection = _pineconeVectorStore.GetCollection<string, HybridComplianceRecord>("retail-bank-regulatory-hybridindex");
 
-                int totalPages = Math.Min(200, pdfDoc.GetNumberOfPages());
                 string parentStoragePath = Path.Combine(AppContext.BaseDirectory, "ParentStore");
-                Directory.CreateDirectory(parentStoragePath);
-                for (int i = 1; i <= totalPages; i++)
+                if (!Directory.Exists(parentStoragePath))
                 {
+                    Directory.CreateDirectory(parentStoragePath);
+                }
+                //for (int i = 1; i <= totalPages; i++)
+                //{
                     
-                    string parentId = $"doc-fcahybrid-page-{i}";
+                    string parentId = $"doc-fcahybrid-page-{intTargetPage}";
                     
-
-                    // 1. Explicitly get and extract text, then let the page object go
-                    var page = pdfDoc.GetPage(i);
-                    string pageText = PdfTextExtractor.GetTextFromPage(page);
 
                     // 2. Save the full page text to a FILE instead of Pinecone Metadata
                     string parentFileName = $"{parentId}.txt";
                     //await File.WriteAllTextAsync(Path.Combine(parentStoragePath, parentFileName), pageText);
 
-                    var parentVector = await _embeddingGenerator.GenerateAsync(new[] { $"Parent anchor for page {i}" });
+                    var parentVector = await _embeddingGenerator.GenerateAsync(new[] { $"Parent anchor for page {intTargetPage}" });
                     var record = new HybridComplianceRecord
                     {
                         Id = parentId,
                         Text = $"Link to {parentFileName}", // Just a reference
                         ChunkType = "parent",
-                        PageNumber = i,
+                        PageNumber = intTargetPage,
                         Vector = parentVector[0].Vector
                     };
                     //await collection.UpsertAsync(record);
@@ -202,7 +202,7 @@ namespace OmniGuard.Compliance.Engine.Services
                             Text = paragraphs[j],
                             ChunkType = "child",
                             Parent_Id = parentId,
-                            PageNumber = i,
+                            PageNumber = intTargetPage,
                             Vector = childVector[j].Vector
                         });
                     }
@@ -217,25 +217,12 @@ namespace OmniGuard.Compliance.Engine.Services
                     // 5. Save to Local SQL
                     //await _sqlLiteDB.IngestionInSQLLite(childRecords);
 
-                    Console.WriteLine($" Page {i}/{totalPages} processed: {childRecords.Count} chunks stored.");
+                   
+                return childRecords.Count;
 
-                    // 6. MEMORY MANAGEMENT: Clear lists and hint GC to prevent the RAM crash
-                    childRecords.Clear();
-                    // Give the Azure Function Host a moment to "breathe" and send its heartbeat
-                    await Task.Delay(100);
-                    if (i % 5 == 0)
-                    {
-                        
-                        GC.Collect(1); // Collect Generation 1 to free up memory from the loop
-                    }
-                }
             }
             finally
             {
-                if (shouldCloseDoc && pdfDoc != null)
-                {
-                    pdfDoc.Close();
-                }
             }
         }
 

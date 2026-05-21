@@ -1,0 +1,6 @@
+@OmniGuard.RetrievalEngine_HostAddress = http://localhost:5039
+
+GET {{OmniGuard.RetrievalEngine_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

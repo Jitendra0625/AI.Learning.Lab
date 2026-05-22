@@ -7,119 +7,118 @@ using OmniGuard.RetrievalEngine.Models;
 
 namespace OmniGuard.RetrievalEngine.Services;
 
-public class ComplianceFlowService(Kernel kernel, PolicySearchPlugin policySearchPlugin)
+public class ComplianceFlowService
 {
+    private readonly Kernel _kernel;
+    private readonly PolicySearchPlugin _policySearchPlugin;
+
+    public ComplianceFlowService(Kernel kernel, PolicySearchPlugin policySearchPlugin)
+    {
+        _kernel = kernel;
+        _policySearchPlugin = policySearchPlugin;
+    }
+
     public async Task<ComplianceApiResponse> RunComplianceFlowAsync(string userQuery)
     {
-        // Add the Policy Search tool as a native plugin to the agent kernel context
-        kernel.Plugins.AddFromObject(policySearchPlugin, "PolicySearch");
+        // Clone the execution kernel per request to guarantee absolute history isolation
+        var executionKernel = _kernel.Clone();
+        executionKernel.Plugins.AddFromObject(_policySearchPlugin, "PolicySearch");
 
-        // 1. Define the Analyzer Agent
-        ChatCompletionAgent analyzer = new()
+        // Streamline execution parameters. Temperature 0 guarantees speed and accuracy.
+        var researcherSettings = new OpenQA.OpenAIPromptExecutionSettings
         {
-            Name = "Analyzer",
-            Instructions = """
-                You are a Compliance Query Analyzer. 
-                1. Your sole task is to isolate and extract strict FCA Handbook rules, abbreviations, and citation codes from the user's prompt (e.g., 'MCOB 2.2.6R', 'CASS 7').
-                2. Strip away all conversational fluff, padding, and framing words (e.g., 'please find', 'tell me about', 'what is').
-                3. Output only the clean, high-value regulatory keywords separated by spaces. Do not write full sentences.
-                """,
-            Kernel = kernel,
-            Arguments = new KernelArguments(new OpenQA.OpenAIPromptExecutionSettings
-            {
-                ServiceId = "HuggingFaceChat"
-            })
+            FunctionChoiceBehavior = FunctionChoiceBehavior.Auto(),
+            ServiceId = "HuggingFaceChat",
+            Temperature = 0.0,
+            MaxTokens = 1000 // Caps generation limits to prevent model loops
         };
 
-        // 2. Define the Researcher Agent
+        var auditorSettings = new OpenQA.OpenAIPromptExecutionSettings
+        {
+            ServiceId = "HuggingFaceChat",
+            Temperature = 0.0,
+            MaxTokens = 300
+        };
+
+        // 1. Define the Researcher Agent
         ChatCompletionAgent researcher = new()
         {
             Name = "Researcher",
             Instructions = """
-                You are a Legal Researcher specialized in the FCA Handbook.
-                1. Always use the PolicySearch_SearchPolicyKnowledgebase tool to fetch verified handbook text using the sanitized keywords provided by the Analyzer.
-                2. Do not attempt to guess or answer from your internal training weights. You must run the search tool.
-                3. Once you have the raw document context results, summarize the evidence clearly for the Compliance_Auditor.
-                4. You MUST provide a response after the tool call is completed.
+                You are a high-speed Legal Data Retrieval Pipe. 
+                1. Always use the PolicySearch_SearchPolicyKnowledgebase tool to fetch verified handbook text. Pass the user's query directly to the tool.
+                2. Do not attempt to synthesize, explain, or write a lengthy summary of the rules. 
+                3. Your sole responsibility is to print the raw text blocks and metadata blocks exactly as retrieved from the database tool so they can be reviewed by the Auditor. Keep your written commentary to a bare minimum.
                 """,
-            Kernel = kernel,
-            Arguments = new KernelArguments(new OpenQA.OpenAIPromptExecutionSettings
-            {
-                // FIXED: Resolved from global Microsoft.SemanticKernel namespace
-                FunctionChoiceBehavior = FunctionChoiceBehavior.Auto(),
-                ServiceId = "HuggingFaceChat"
-            })
+            Kernel = executionKernel,
+            Arguments = new KernelArguments(researcherSettings)
         };
 
-        // 3. Define the Auditor Agent
+        // 2. Define the Auditor Agent
         ChatCompletionAgent auditor = new()
         {
             Name = "Compliance_Auditor",
             Instructions = """
-                You are a Senior Bank Auditor. 
-                1. Review the raw evidence summary provided by the Researcher.
-                2. Assign a Confidence Score strictly in this format: [High/Medium/Low].
-                3. Provide a 'Compliance Advisory' if the evidence is missing, out-of-date, or unclear.
-                4. If the exact rule citation requested is present and verified in the text context, assign a [High] score and say 'AUDIT PASSED'.
-                5. If confidence is [Low] or [Medium], state that the rule could not be verified and say 'AUDIT FAILED'.
+                You are a high-speed Senior Bank Auditor Agent. Be extremely concise. Do not chat.
+                
+                CRITICAL EVALUATION STEPS:
+                1. Analyze the context provided in the system arguments. 
+                2. If the exact rule citation requested is fully present and verified in the source text blocks, output exactly:
+                   Confidence Score: [High]
+                   AUDIT PASSED
+                   
+                3. If any core requirement from the Target Query is missing, unverified, or flagged with a penalty, output exactly:
+                   Confidence Score: [Medium]
+                   AUDIT FAILED
+                   Reason: State exactly what text component was missing from the source documentation.
                 """,
-            Kernel = kernel
+            Kernel = executionKernel,
+            Arguments = new KernelArguments(auditorSettings)
         };
 
-        // Initialize Group Chat space for history orchestration tracking
-#pragma warning disable SKEXP0110
-        AgentGroupChat chat = new(analyzer, researcher, auditor);
-#pragma warning restore SKEXP0110
-
-        chat.AddChatMessage(new ChatMessageContent(AuthorRole.User, userQuery));
-
         // ==========================================
-        // STEP 1: EXECUTE ANALYZER
-        // ==========================================
-        var analyzerOutput = new System.Text.StringBuilder();
-        var historyForAnalyzer = await chat.GetChatMessagesAsync().ToListAsync();
-
-        await foreach (var message in analyzer.InvokeAsync(historyForAnalyzer))
-        {
-            analyzerOutput.AppendLine(message.Message.Content);
-        }
-
-        string sanitizedQuery = analyzerOutput.ToString().Trim();
-        chat.AddChatMessage(new ChatMessageContent(AuthorRole.Assistant, $"Sanitized Query Keywords: {sanitizedQuery}") { AuthorName = "Analyzer" });
-
-        // ==========================================
-        // STEP 2: EXECUTE RESEARCHER
+        // STEP 1: EXECUTE RESEARCHER (Direct Data Retrieval)
         // ==========================================
         var researcherOutput = new System.Text.StringBuilder();
-        var historyForResearcher = await chat.GetChatMessagesAsync().ToListAsync();
+        var researcherHistory = new List<ChatMessageContent> { new(AuthorRole.User, userQuery) };
 
-        await foreach (var message in researcher.InvokeAsync(historyForResearcher))
+        await foreach (var message in researcher.InvokeAsync(researcherHistory))
         {
-            researcherOutput.AppendLine(message.Message.Content);
+            if (!string.IsNullOrEmpty(message.Message.Content))
+            {
+                researcherOutput.Append(message.Message.Content);
+            }
         }
-
         string researcherSummary = researcherOutput.ToString().Trim();
-        chat.AddChatMessage(new ChatMessageContent(AuthorRole.Assistant, researcherSummary) { AuthorName = "Researcher" });
 
         // ==========================================
-        // STEP 3: EXECUTE AUDITOR
+        // STEP 2: EXECUTE AUDITOR (Direct Pipeline Coupling)
         // ==========================================
         var auditorOutput = new System.Text.StringBuilder();
-        var historyForAuditor = await chat.GetChatMessagesAsync().ToListAsync();
 
-        await foreach (var message in auditor.InvokeAsync(historyForAuditor))
+        var structuredAuditorInput = new List<ChatMessageContent>
         {
-            auditorOutput.AppendLine(message.Message.Content);
+            new(AuthorRole.User, $"""
+                Target Query to Evaluate: {userQuery}
+                Source Evidence Provided: {researcherSummary}
+                """)
+        };
+
+        await foreach (var message in auditor.InvokeAsync(structuredAuditorInput))
+        {
+            if (!string.IsNullOrEmpty(message.Message.Content))
+            {
+                auditorOutput.Append(message.Message.Content);
+            }
         }
-
         string finalVerdict = auditorOutput.ToString().Trim();
-        chat.AddChatMessage(new ChatMessageContent(AuthorRole.Assistant, finalVerdict) { AuthorName = "Compliance_Auditor" });
 
-        // Map data directly to the Web API response contract
+        // Return the extracted research summary directly back to the API contract response 
+        // so that the compliance officer can read the actual textual evidence alongside the verdict.
         return new ComplianceApiResponse(
             Status: finalVerdict.Contains("AUDIT PASSED") ? "Verified" : "Rejected",
-            SanitizedQuery: sanitizedQuery,
-            ResearcherSummary: researcherSummary,
+            SanitizedQuery: "Routed Directly to PolicySearch Engine",
+            ResearcherSummary: researcherSummary, // Exposing the underlying ground-truth text answer
             AuditorVerdict: finalVerdict
         );
     }

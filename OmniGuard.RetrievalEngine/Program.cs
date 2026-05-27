@@ -1,15 +1,38 @@
-using System.Net.Http.Headers;
-using Azure.Storage.Blobs;
+﻿using System.Net.Http.Headers;
 using Microsoft.Extensions.AI;
 using Microsoft.SemanticKernel;
 using OmniGuard.RetrievalEngine.Models;
 using OmniGuard.RetrievalEngine.Plugins;
 using OmniGuard.RetrievalEngine.Services;
 using Microsoft.Extensions.Azure;
+using OpenTelemetry.Trace; // ◄ Added for tracing infrastructure
+using OpenTelemetry.Resources; // ◄ Added for service definitions
 
 var builder = WebApplication.CreateBuilder(args);
-string? modelId = Environment.GetEnvironmentVariable("HuggingFaceModelId", EnvironmentVariableTarget.User);  // Or any Chat-optimized model
+string? modelId = Environment.GetEnvironmentVariable("HuggingFaceModelId", EnvironmentVariableTarget.User);  
 string? apiKey = Environment.GetEnvironmentVariable("HuggingFaceAPIKey", EnvironmentVariableTarget.User);
+
+// =========================================================================
+// --- NATIVE OPENTELEMETRY TRACING CONFIGURATION FOR LANGFUSE US CLOUD ---
+// =========================================================================
+builder.Services.AddOpenTelemetry()
+    .ConfigureResource(resource => resource.AddService("OmniGuard-Local-Engine"))
+    .WithTracing(tracing => tracing
+        .AddSource("OmniGuard-Local-Engine")     // Captures your ComplianceFlowService custom tags
+        .AddSource("Microsoft.SemanticKernel*")   // Automatically monitors SK internal orchestration spans
+        .AddHttpClientInstrumentation()           // Tracks latency variations to Pinecone and HuggingFace endpoints
+        .AddAspNetCoreInstrumentation()           // Automatically maps incoming Minimal API request attributes
+        .AddOtlpExporter(options =>
+        {
+            // Pointing to your dedicated US Cloud OTLP Intake Router
+            //options.Endpoint = new Uri("https://us.otel.langfuse.com");
+            options.Endpoint = new Uri("https://us.cloud.langfuse.com/api/public/otel/v1/traces");
+            options.Protocol = OpenTelemetry.Exporter.OtlpExportProtocol.HttpProtobuf;
+
+            // Inject the secure basic auth Base64 credentials token you generated with Bash
+            options.Headers = "Authorization=Basic PASTE__KEY_HERE";
+        }));
+// =========================================================================
 
 // Infrastructure Layer Registrations
 builder.Services.AddHttpClient("PineconeClient", client =>

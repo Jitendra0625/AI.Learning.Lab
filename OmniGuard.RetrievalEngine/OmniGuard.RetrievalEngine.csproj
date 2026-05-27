@@ -27,6 +27,10 @@
     <PackageReference Include="Microsoft.SemanticKernel.Agents.Core" Version="1.76.0" />
     <PackageReference Include="Microsoft.SemanticKernel.Connectors.Onnx" Version="1.76.0-alpha" />
     <PackageReference Include="Microsoft.SemanticKernel.Connectors.OpenAI" Version="1.76.0" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.15.3" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.15.3" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.15.2" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.15.1" />
     <PackageReference Include="PdfPig" Version="0.1.14" />
   </ItemGroup>
 

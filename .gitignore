@@ -62,3 +62,4 @@ nunit-*.xml
 *.md
 /.vs/AI.Learning.Lab
 /OmniGuard.Compliance.Engine/AzureServiceBusEmulatorSetup/OmniGuard_Cloud_Env/docker-compose.yaml
+/OmniGuard.Compliance.Engine/AzureServiceBusEmulatorSetup/OmniGuard_Cloud_Env/docker-compose.yaml

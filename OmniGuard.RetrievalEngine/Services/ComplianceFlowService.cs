@@ -4,6 +4,7 @@ using Microsoft.SemanticKernel.ChatCompletion;
 using OpenQA = Microsoft.SemanticKernel.Connectors.OpenAI;
 using OmniGuard.RetrievalEngine.Plugins;
 using OmniGuard.RetrievalEngine.Models;
+using System.Diagnostics; // ◄ Required for native .NET OpenTelemetry Activity tracking
 
 namespace OmniGuard.RetrievalEngine.Services;
 
@@ -11,6 +12,9 @@ public class ComplianceFlowService
 {
     private readonly Kernel _kernel;
     private readonly PolicySearchPlugin _policySearchPlugin;
+
+    // Define the ActivitySource identifier that matches your Program.cs registration exactly
+    private static readonly ActivitySource OmniGuardSource = new("OmniGuard-Local-Engine");
 
     public ComplianceFlowService(Kernel kernel, PolicySearchPlugin policySearchPlugin)
     {
@@ -20,6 +24,9 @@ public class ComplianceFlowService
 
     public async Task<ComplianceApiResponse> RunComplianceFlowAsync(string userQuery)
     {
+        // Capture the parent web host activity context or spin up an isolated execution root span
+        using var activity = Activity.Current ?? OmniGuardSource.StartActivity("RunComplianceFlow");
+
         // Clone the execution kernel per request to guarantee absolute history isolation
         var executionKernel = _kernel.Clone();
         executionKernel.Plugins.AddFromObject(_policySearchPlugin, "PolicySearch");
@@ -91,6 +98,16 @@ public class ComplianceFlowService
         }
         string researcherSummary = researcherOutput.ToString().Trim();
 
+        // --- TASK 1 INTERCEPTION: INJECT INPUT & RETRIEVAL TAGS ---
+        if (activity != null)
+        {
+            // Line 1: Track the exact incoming user request string parameters
+            activity.SetTag("gen_ai.prompt", userQuery);
+
+            // Line 2: Map the raw text extracted from SQL/Pinecone straight into the RAG context field
+            activity.SetTag("rag.context", researcherSummary);
+        }
+
         // ==========================================
         // STEP 2: EXECUTE AUDITOR (Direct Pipeline Coupling)
         // ==========================================
@@ -113,12 +130,18 @@ public class ComplianceFlowService
         }
         string finalVerdict = auditorOutput.ToString().Trim();
 
+        // --- TASK 1 INTERCEPTION: INJECT OUTPUT COMPLETION TAG ---
+        if (activity != null)
+        {
+            // Line 3: Capture the final deterministic auditor response evaluation text
+            activity.SetTag("gen_ai.completion", finalVerdict);
+        }
+
         // Return the extracted research summary directly back to the API contract response 
-        // so that the compliance officer can read the actual textual evidence alongside the verdict.
         return new ComplianceApiResponse(
             Status: finalVerdict.Contains("AUDIT PASSED") ? "Verified" : "Rejected",
             SanitizedQuery: "Routed Directly to PolicySearch Engine",
-            ResearcherSummary: researcherSummary, // Exposing the underlying ground-truth text answer
+            ResearcherSummary: researcherSummary,
             AuditorVerdict: finalVerdict
         );
     }

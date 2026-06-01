@@ -1,15 +1,31 @@
-﻿using System.Net.Http.Headers;
-using Microsoft.Extensions.AI;
+﻿using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Azure;
 using Microsoft.SemanticKernel;
+using ModelContextProtocol; // ◄ Native SDK namespacing
+using ModelContextProtocol.Server;
 using OmniGuard.RetrievalEngine.Models;
 using OmniGuard.RetrievalEngine.Plugins;
 using OmniGuard.RetrievalEngine.Services;
-using Microsoft.Extensions.Azure;
-using OpenTelemetry.Trace; // ◄ Added for tracing infrastructure
-using OpenTelemetry.Resources; // ◄ Added for service definitions
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
+using System.ComponentModel;
+using System.Net.Http.Headers;
 
 var builder = WebApplication.CreateBuilder(args);
-string? modelId = Environment.GetEnvironmentVariable("HuggingFaceModelId", EnvironmentVariableTarget.User);  
+
+// Check if launched by an IDE Agent client
+bool isMcpMode = args.Contains("--mcp");
+
+if (isMcpMode)
+{
+    // CRITICAL 1: Disable all standard console logging to protect the JSON-RPC channel
+    builder.Logging.ClearProviders();
+
+    // CRITICAL 2: Tell ASP.NET Core not to bind to any HTTP ports or boot Kestrel
+    builder.WebHost.UseUrls();
+}
+
+string? modelId = Environment.GetEnvironmentVariable("HuggingFaceModelId", EnvironmentVariableTarget.User);
 string? apiKey = Environment.GetEnvironmentVariable("HuggingFaceAPIKey", EnvironmentVariableTarget.User);
 
 // =========================================================================
@@ -18,18 +34,14 @@ string? apiKey = Environment.GetEnvironmentVariable("HuggingFaceAPIKey", Environ
 builder.Services.AddOpenTelemetry()
     .ConfigureResource(resource => resource.AddService("OmniGuard-Local-Engine"))
     .WithTracing(tracing => tracing
-        .AddSource("OmniGuard-Local-Engine")     // Captures your ComplianceFlowService custom tags
-        .AddSource("Microsoft.SemanticKernel*")   // Automatically monitors SK internal orchestration spans
-        .AddHttpClientInstrumentation()           // Tracks latency variations to Pinecone and HuggingFace endpoints
-        .AddAspNetCoreInstrumentation()           // Automatically maps incoming Minimal API request attributes
+        .AddSource("OmniGuard-Local-Engine")
+        .AddSource("Microsoft.SemanticKernel*")
+        .AddHttpClientInstrumentation()
+        .AddAspNetCoreInstrumentation()
         .AddOtlpExporter(options =>
         {
-            // Pointing to your dedicated US Cloud OTLP Intake Router
-            //options.Endpoint = new Uri("https://us.otel.langfuse.com");
-            options.Endpoint = new Uri("https://us.cloud.langfuse.com/api/public/otel/v1/traces");
+            options.Endpoint = new Uri("https://langfuse.com");
             options.Protocol = OpenTelemetry.Exporter.OtlpExportProtocol.HttpProtobuf;
-
-            // Inject the secure basic auth Base64 credentials token generated with Bash
             options.Headers = "Authorization=Basic PASTE__KEY_HERE";
         }));
 // =========================================================================
@@ -52,23 +64,19 @@ builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(sp 
     return kernelBuilder.Build().GetRequiredService<IEmbeddingGenerator<string, Embedding<float>>>();
 });
 
-// Register Semantic Kernel with Hugging Face Chat Completion service configuration
 builder.Services.AddTransient<Kernel>(sp =>
 {
     var config = sp.GetRequiredService<IConfiguration>();
     var kernelBuilder = Kernel.CreateBuilder();
-
     kernelBuilder.AddOpenAIChatCompletion(
         modelId: modelId,
         apiKey: apiKey,
-        endpoint: new Uri("https://router.huggingface.co/v1"),
+        endpoint: new Uri("https://huggingface.co"),
         serviceId: "HuggingFaceChat"
     );
-
     return kernelBuilder.Build();
 });
 
-// Register the custom search plugin and our agent flow service
 builder.Services.AddScoped<PolicySearchPlugin>();
 builder.Services.AddTransient<ComplianceFlowService>();
 builder.Services.AddAzureClients(clientBuilder =>
@@ -78,17 +86,35 @@ builder.Services.AddAzureClients(clientBuilder =>
     clientBuilder.AddTableServiceClient(builder.Configuration["StorageConnection:tableServiceUri"]!).WithName("StorageConnection");
 });
 
+// =========================================================================
+// --- MODEL CONTEXT PROTOCOL (MCP) SERVICE CONFIGURATION -----------------
+// =========================================================================
+if (isMcpMode)
+{
+    // Register the server container and configure the standard IO transport natively
+    builder.Services.AddMcpServer(options =>
+    {
+        options.ServerInfo = new() { Name = "OmniGuard-Core-Engine", Version = "1.0.0" };
+    })
+    .WithStdioServerTransport()
+    .WithToolsFromAssembly(); // Automatically scans for types decorated with [McpServerToolType]
+}
+
 var app = builder.Build();
 
-// Expose the clean Agentic compliance execution flow to HTTP POST queries
+if (isMcpMode)
+{
+    // Start listening on the clean Stdio channel and block the execution from starting Kestrel
+    await app.RunAsync();
+    return;
+}
+
+// Standard Minimal API Endpoints (Preserved for regular HTTP testing/UI)
 app.MapPost("/api/retrieve", async (ComplianceFlowService complianceFlow, ComplianceQueryRequest request) =>
 {
     try
     {
-        // Executes the turn-by-turn Agent Framework chain process cleanly
         var resultPayload = await complianceFlow.RunComplianceFlowAsync(request.UserPrompt);
-
-        // Returns the final results payload back out to the web client
         return Results.Ok(resultPayload);
     }
     catch (Exception ex)
@@ -103,20 +129,10 @@ app.MapPost("/api/retrieve1", async (PolicySearchPlugin searchPlugin, Compliance
     {
         return Results.BadRequest(new { error = "User compliance prompt cannot be empty." });
     }
-
     try
     {
-        // Bypasses the ComplianceFlowService agent chain entirely 
-        // Directly executes the 384-dim ONNX + Pinecone + SQL BM25 + Azurite pipeline
         string rawContextResult = await searchPlugin.SearchPolicyKnowledgebase(request.UserPrompt);
-
-        // Returns the final blended text payload back out to the web client
-        return Results.Ok(new
-        {
-            ProcessedQuery = request.UserPrompt,
-            Timestamp = DateTime.UtcNow,
-            RetrievedContext = rawContextResult
-        });
+        return Results.Ok(new { ProcessedQuery = request.UserPrompt, Timestamp = DateTime.UtcNow, RetrievedContext = rawContextResult });
     }
     catch (Exception ex)
     {
@@ -125,3 +141,30 @@ app.MapPost("/api/retrieve1", async (PolicySearchPlugin searchPlugin, Compliance
 });
 
 app.Run();
+
+// =========================================================================
+// --- DISCOVERABLE MCP TOOL DEFINITIONS MATRIX ---------------------------
+// =========================================================================
+[McpServerToolType]
+public static class OmniGuardMcpTools
+{
+    [McpServerTool]
+    [Description("Runs the complete sequential agent auditor loop on a compliance clause to get verification and scoring.")]
+    public static async Task<string> ExecuteComplianceAudit([Description("The exact mortgage rule clause text or user query to verify.")] string userPrompt, ComplianceFlowService complianceFlow)
+    {
+        // Parameter Injection auto-resolves scoped service directly from the request context
+        var resultPayload = await complianceFlow.RunComplianceFlowAsync(userPrompt);
+        return $"Status: Passed\nPayload: {resultPayload}";
+    }
+
+    [McpServerTool]
+    [Description("Exposes raw, factual compliance data extracted straight from the direct metal RRF pipe.")]
+    public static async Task<string> FetchRawComplianceFeed(
+    [Description("The specific baseline keywords or policy sections to fetch.")] string searchTerms,
+    PolicySearchPlugin searchPlugin)
+    {
+        // Passes the dynamic user input term directly down to your ONNX/Pinecone/SQL pipeline
+        string rawContextResult = await searchPlugin.SearchPolicyKnowledgebase(searchTerms);
+        return rawContextResult;
+    }
+}

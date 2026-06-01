@@ -29,7 +29,7 @@ builder.Services.AddOpenTelemetry()
             options.Endpoint = new Uri("https://us.cloud.langfuse.com/api/public/otel/v1/traces");
             options.Protocol = OpenTelemetry.Exporter.OtlpExportProtocol.HttpProtobuf;
 
-            // Inject the secure basic auth Base64 credentials token you generated with Bash
+            // Inject the secure basic auth Base64 credentials token generated with Bash
             options.Headers = "Authorization=Basic PASTE__KEY_HERE";
         }));
 // =========================================================================

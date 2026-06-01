@@ -13,7 +13,7 @@ public class ComplianceFlowService
     private readonly Kernel _kernel;
     private readonly PolicySearchPlugin _policySearchPlugin;
 
-    // Define the ActivitySource identifier that matches your Program.cs registration exactly
+    // Define the ActivitySource identifier that matches Program.cs registration exactly
     private static readonly ActivitySource OmniGuardSource = new("OmniGuard-Local-Engine");
 
     public ComplianceFlowService(Kernel kernel, PolicySearchPlugin policySearchPlugin)

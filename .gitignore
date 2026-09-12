@@ -63,3 +63,44 @@ nunit-*.xml
 /.vs/AI.Learning.Lab
 /OmniGuard.Compliance.Engine/AzureServiceBusEmulatorSetup/OmniGuard_Cloud_Env/docker-compose.yaml
 /OmniGuard.Compliance.Engine/AzureServiceBusEmulatorSetup/OmniGuard_Cloud_Env/docker-compose.yaml
+
+# Secrets & local config
+**/local.settings.json
+**/appsettings.Development.json
+**/.env
+**/.env.*
+!**/.env.example
+
+# Terraform
+**/*.tfstate
+**/*.tfstate.*
+**/.terraform/
+**/.terraform.lock.hcl
+**/crash.log
+**/crash.*.log
+**/*.tfvars
+!**/*.tfvars.example
+
+# azd
+.azure/
+**/azd-env-*/
+
+# .NET build output
+**/bin/
+**/obj/
+**/*.user
+**/publish/
+
+# Visual Studio
+.vs/
+*.suo
+
+# Node (React UI)
+complaint-handler-ui-scaffold/node_modules/
+complaint-handler-ui-scaffold/dist/
+complaint-handler-ui-scaffold/.env*
+
+# OS/editor cruft
+.DS_Store
+Thumbs.db
+.vscode/

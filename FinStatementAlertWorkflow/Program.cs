@@ -41,14 +41,14 @@ namespace FinStatementAlertWorkflow
             // 2. CONFIGURATION & INFRASTRUCTURE KEYS
             // ==========================================
             var openAiEndpoint = new Uri("https://jmg0625-5166-resource.openai.azure.com/");
-            var openAiKey = new ApiKeyCredential("6ZHFVzOTwFT1PBFKOyvn8pLKMrR9RFQrOiQ1YrLkEWwMn8oCAoADJQQJ99CGACYeBjFXJ3w3AAAAACOGuFWK");
+            var openAiKey = new ApiKeyCredential("");
 
-            var blobConnectionString = "DefaultEndpointsProtocol=https;AccountName=omniguardstorage;AccountKey=Y7cgqb5NedE58Pz+qQK7CRlDV+5afMsrXhg9LDoSs/cBk8ugX1JIh1F9OZV/VczvKh9x/EdbDSYQ+ASt5s0ebQ==;EndpointSuffix=core.windows.net";
+            var blobConnectionString = "DefaultEndpointsProtocol=https;AccountName=omniguardstorage;AccountKey===;EndpointSuffix=core.windows.net";
 
             var docIntelEndpoint = new Uri("https://firstdocumentintelligence.cognitiveservices.azure.com/");
-            var docIntelKey = new AzureKeyCredential("AW74Vl50lphQ1ofE0LCJtfe1zlFrMKMQLRaDd4ukbUWPQFRi4ZGVJQQJ99CGACYeBjFXJ3w3AAALACOGpc5C");
+            var docIntelKey = new AzureKeyCredential("");
 
-            var appInsightsConnectionString = "InstrumentationKey=618d3b83-0040-4f8d-bf01-57c33e9c9c9c;IngestionEndpoint=https://eastus-8.in.applicationinsights.azure.com/";
+            var appInsightsConnectionString = "";
 
             // ==========================================
             // 3. INITIALIZE SECURE CLIENTS

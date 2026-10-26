@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Secrets and local settings: never commit these
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Per-run workspaces the agents will create later
+workspaces/
+runs_data/
+
+# Logs
+*.log
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

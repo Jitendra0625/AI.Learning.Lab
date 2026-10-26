@@ -40,12 +40,12 @@ namespace FinStatementAlertWorkflow
             // ==========================================
             // 2. CONFIGURATION & INFRASTRUCTURE KEYS
             // ==========================================
-            var openAiEndpoint = new Uri("https://jmg0625-5166-resource.openai.azure.com/");
+            var openAiEndpoint = new Uri("");
             var openAiKey = new ApiKeyCredential("");
 
-            var blobConnectionString = "DefaultEndpointsProtocol=https;AccountName=omniguardstorage;AccountKey===;EndpointSuffix=core.windows.net";
+            var blobConnectionString = "DefaultEndpointsProtocol=https;AccountName=;AccountKey===;EndpointSuffix=core.windows.net";
 
-            var docIntelEndpoint = new Uri("https://firstdocumentintelligence.cognitiveservices.azure.com/");
+            var docIntelEndpoint = new Uri("");
             var docIntelKey = new AzureKeyCredential("");
 
             var appInsightsConnectionString = "";

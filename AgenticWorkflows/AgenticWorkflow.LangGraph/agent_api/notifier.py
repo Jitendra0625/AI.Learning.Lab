@@ -61,20 +61,26 @@ def _sign(body: bytes) -> bytes:
     return hmac.new(_secret(), body, hashlib.sha256).digest()
 
 
-def make_token(run_id: str, ttl: int | None = None, now: float | None = None) -> str:
-    """run_id + expiry, signed with HMAC. Anyone can read it, nobody can change it without the secret."""
+def make_token(run_id: str, gate: str, ttl: int | None = None, now: float | None = None) -> str:
+    """run_id + gate + expiry, signed with HMAC. Anyone can read it, nobody can change it without
+    the secret.
+
+    The GATE (which review: "designer:2" = the designer's second attempt) is part of the link
+    because one run now has several reviews. A link from an earlier email must not be able to
+    approve a LATER review of the same run. app.py checks the gate against the run's current one.
+    """
     current = time.time() if now is None else now
     expires = int(current + (_ttl() if ttl is None else ttl))
-    body = f"{run_id}.{expires}".encode()
+    body = f"{run_id}|{gate}|{expires}".encode()
     return f"{_b64(body)}.{_b64(_sign(body))}"
 
 
-def read_token(token: str, now: float | None = None) -> str:
-    """Return the run_id inside a valid token, or raise TokenError."""
+def read_token(token: str, now: float | None = None) -> tuple[str, str]:
+    """Return (run_id, gate) from a valid token, or raise TokenError."""
     try:
         body_part, sig_part = token.split(".")
         body, sig = _unb64(body_part), _unb64(sig_part)
-        run_id, expires = body.decode().rsplit(".", 1)
+        run_id, gate, expires = body.decode().split("|")
         expires_at = int(expires)
     except Exception:
         raise TokenError("malformed") from None
@@ -82,7 +88,7 @@ def read_token(token: str, now: float | None = None) -> str:
         raise TokenError("bad signature")
     if (time.time() if now is None else now) > expires_at:
         raise TokenError("expired")
-    return run_id
+    return run_id, gate
 
 
 # ---------------------------------------------------------------- sending
@@ -107,24 +113,32 @@ def send_email(to: str, subject: str, body: str) -> None:
         smtp.send_message(msg)
 
 
-def review_link(run_id: str) -> str:
-    return f"{os.getenv('PUBLIC_BASE_URL', 'http://127.0.0.1:8000').rstrip('/')}/review/{make_token(run_id)}"
+def review_link(run_id: str, gate: str) -> str:
+    return f"{os.getenv('PUBLIC_BASE_URL', 'http://127.0.0.1:8000').rstrip('/')}/review/{make_token(run_id, gate)}"
 
 
 async def notify_review_needed(run_id: str, payload: dict) -> None:
-    """Tell the reviewer a run is waiting. `payload` is what approve() passed to interrupt()."""
-    link = review_link(run_id)
+    """Tell the reviewer a run is waiting. `payload` is what the review node passed to interrupt()."""
+    link = review_link(run_id, payload["gate"])
     hours = max(1, _ttl() // 3600)
-    answer = str(payload.get("answer", ""))
-    if len(answer) > 1500:
-        answer = answer[:1500] + " ..."
-    subject = f"Review needed: {run_id} (judge: {payload.get('verdict')})"
+    output = str(payload.get("output", ""))
+    if len(output) > 1500:
+        output = output[:1500] + " ..."
+    where = f"step {payload.get('step')}/{payload.get('total_steps')}, {payload.get('title')}"
+    subject = f"Review needed: {run_id} ({where}, attempt {payload.get('attempt')}/{payload.get('max_attempts')})"
+    earlier = (
+        f"This attempt was asked to address your earlier comment:\n{payload['previous_feedback']}\n\n"
+        if payload.get("previous_feedback")
+        else ""
+    )
     body = (
         "A run is waiting for your review.\n\n"
         f"Run:      {run_id}\n"
-        f"Verdict:  {payload.get('verdict')}  (stopped because: {payload.get('stop_reason')})\n"
+        f"Stage:    {where}\n"
+        f"Attempt:  {payload.get('attempt')} of {payload.get('max_attempts')}\n"
         f"Tokens:   {payload.get('tokens_used')} of {payload.get('token_budget')}\n\n"
-        f"Answer:\n{answer}\n\n"
+        f"{earlier}"
+        f"Result:\n{output}\n\n"
         "Open this page to approve or reject:\n"
         f"{link}\n\n"
         f"The link works for {hours} hours. Opening it changes nothing; you confirm on the page.\n"

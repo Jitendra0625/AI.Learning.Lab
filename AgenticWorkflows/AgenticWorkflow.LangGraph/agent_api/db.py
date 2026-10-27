@@ -103,23 +103,30 @@ async def mark_failed(pool, run_id: str, error: str) -> None:
     )
 
 
-async def claim_for_review(pool, run_id: str) -> str:
-    """Take the review, atomically. Returns 'claimed', 'not_found', or the run's current status.
+async def claim_for_review(pool, run_id: str, gate: str) -> str:
+    """Take the review, atomically.
+    Returns 'claimed', 'not_found', 'stale_gate', or the run's current status.
 
-    The check ("is it waiting?") and the change ("now it is running") are ONE statement, so the
-    database lets exactly one of any number of simultaneous callers win. This is the same idea as
-    the atomic stock decrement, and it keeps working with several server processes.
+    Three things are checked and changed in ONE statement: the run exists, it is waiting, and it
+    is waiting at THIS gate (for example "designer:2"). The database lets exactly one of any
+    number of simultaneous callers win, and a decision for an earlier review (an old email link, a
+    double click that arrives after the run moved on) cannot touch a later one.
     """
     row = await _one(
         pool,
         "UPDATE runs SET status = 'RUNNING', pending_review = NULL, updated_at = now()"
-        " WHERE run_id = %s AND status = 'WAITING_REVIEW' RETURNING run_id",
-        (run_id,),
+        " WHERE run_id = %s AND status = 'WAITING_REVIEW' AND pending_review->>'gate' = %s"
+        " RETURNING run_id",
+        (run_id, gate),
     )
     if row:
         return "claimed"
     current = await _one(pool, "SELECT status FROM runs WHERE run_id = %s", (run_id,))
-    return "not_found" if current is None else current["status"]
+    if current is None:
+        return "not_found"
+    if current["status"] == "WAITING_REVIEW":
+        return "stale_gate"     # waiting, but for a different review than the caller named
+    return current["status"]
 
 
 async def fail_interrupted_runs(pool) -> int:

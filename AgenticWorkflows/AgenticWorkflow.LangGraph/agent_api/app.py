@@ -1,6 +1,7 @@
 """
-FastAPI wrapper around the LangGraph workflow: start, status, review (JSON and email link).
-State is kept in Postgres, so a restart no longer loses runs.
+FastAPI wrapper around the five-stage agent pipeline (graph.py): start, status, review (JSON and
+email link). A person reviews after EACH stage; one run therefore pauses and resumes five or more
+times. State is kept in Postgres, so a restart does not lose runs.
 
 Run:
     docker compose up -d              # Postgres (see docker-compose.yml)
@@ -8,9 +9,10 @@ Run:
     python run.py                     # on Windows use this, not plain `uvicorn app:app`
 
 Endpoints:
-    POST /v1/runs                 start a run          -> 202 + run_id
+    POST /v1/runs                 start a run (body: requirement)  -> 202 + run_id
     GET  /v1/runs/{run_id}        status + live state  -> QUEUED / RUNNING / WAITING_REVIEW / COMPLETED / FAILED
-    POST /v1/runs/{run_id}/review approve or reject    -> 202, the graph resumes in the background
+    POST /v1/runs/{run_id}/review approve or reject the CURRENT stage -> 202, the graph resumes in the background
+                                  (reject needs a useful comment: the same agent gets it and tries again)
     GET  /review/{token}          page opened from the email link (changes nothing)
     POST /review/{token}          the Approve / Reject buttons on that page -> resumes the graph
 
@@ -49,10 +51,14 @@ from pydantic import BaseModel, Field
 
 import db
 import notifier
-from graph import DEFAULT_TOKEN_BUDGET, build_graph
+from agents import STAGES
+from graph import DEFAULT_TOKEN_BUDGET, MAX_ATTEMPTS_PER_STAGE, build_graph
 
 log = logging.getLogger("app")
-RECURSION_LIMIT = 30
+# Last-resort cap on graph steps PER CALL to the graph. The worst legitimate run is every stage
+# running its maximum attempts: (agent + review) x attempts x stages, plus `finish`. A routing bug
+# that loops would hit this instead of spending tokens forever.
+RECURSION_LIMIT = 2 * len(STAGES) * MAX_ATTEMPTS_PER_STAGE + 10
 DEFAULT_DATABASE_URL = "postgresql://agent:agent@127.0.0.1:5432/agentdb"   # matches docker-compose.yml
 TASKS: set[asyncio.Task] = set()  # strong references, so running tasks are not garbage-collected
 
@@ -107,11 +113,14 @@ app = FastAPI(title="Agent workflow API", lifespan=lifespan)
 # ---------------------------------------------------------------- models
 
 class StartRun(BaseModel):
-    question: str = Field(min_length=1, max_length=2000)
+    requirement: str = Field(min_length=1, max_length=4000)
     token_budget: int = Field(default=DEFAULT_TOKEN_BUDGET, ge=1, le=1_000_000)  # per-run cap
 
 
 class Review(BaseModel):
+    # `gate` names the review being answered (copy it from pending_review.gate). It makes a late or
+    # repeated request harmless: it cannot approve a later review of the same run.
+    gate: str = Field(min_length=1, max_length=100)
     decision: Literal["approve", "reject"]
     comment: str = Field(default="", max_length=2000)
 
@@ -119,7 +128,7 @@ class Review(BaseModel):
 class RunOut(BaseModel):
     run_id: str
     status: Literal["QUEUED", "RUNNING", "WAITING_REVIEW", "COMPLETED", "FAILED"]
-    outcome: Literal["APPROVED", "REJECTED"] | None = None
+    outcome: Literal["APPROVED", "REJECTED", "STOPPED_BUDGET"] | None = None
     created_at: str
     updated_at: str
     pending_review: dict | None = None   # what the reviewer needs to see
@@ -166,8 +175,8 @@ async def _execute(app: FastAPI, run_id: str, graph_input) -> None:
             # Mail goes out AFTER the status flips, so a quick click never meets a 409.
             await _notify(run_id, payload)
         else:
-            outcome = {"approve": "APPROVED", "reject": "REJECTED"}.get(result.get("approved"))
-            await db.mark_completed(pool, run_id, result, outcome)
+            # `finish` in the graph decided how the run ended: APPROVED, REJECTED or STOPPED_BUDGET
+            await db.mark_completed(pool, run_id, result, result.get("outcome"))
     except Exception as exc:  # background exceptions vanish silently unless we record them
         log.exception("run %s failed", run_id)
         try:
@@ -185,7 +194,7 @@ async def create_run(body: StartRun, request: Request):
     start_run(
         request.app,
         run_id,
-        {"question": body.question, "retries": 0, "tokens_used": 0, "token_budget": body.token_budget},
+        {"requirement": body.requirement, "tokens_used": 0, "token_budget": body.token_budget},
     )
     return run
 
@@ -199,13 +208,15 @@ async def get_run(run_id: str, request: Request):
     return RunOut(**run, state=snapshot.values or None, next_node=list(snapshot.next))
 
 
-async def submit_review(app: FastAPI, run_id: str, decision: str, comment: str) -> dict:
+async def submit_review(app: FastAPI, run_id: str, gate: str, decision: str, comment: str) -> dict:
     """The ONE place a review is accepted. Used by the JSON endpoint and by the email page.
     The database makes the check-and-change atomic (db.claim_for_review): of any number of
-    simultaneous approvals, exactly one is 'claimed'; the others get 409."""
-    outcome = await db.claim_for_review(app.state.pool, run_id)
+    simultaneous decisions for the same gate, exactly one is 'claimed'; the others get 409."""
+    outcome = await db.claim_for_review(app.state.pool, run_id, gate)
     if outcome == "not_found":
         raise HTTPException(404, "Run not found")
+    if outcome == "stale_gate":
+        raise HTTPException(409, "That review is no longer current: the run has moved on to a later review")
     if outcome != "claimed":
         raise HTTPException(409, f"Run is {outcome}, not WAITING_REVIEW")
     start_run(app, run_id, Command(resume={"decision": decision, "comment": comment}))
@@ -214,7 +225,7 @@ async def submit_review(app: FastAPI, run_id: str, decision: str, comment: str) 
 
 @app.post("/v1/runs/{run_id}/review", response_model=RunOut, status_code=202)
 async def review_run(run_id: str, body: Review, request: Request):
-    return await submit_review(request.app, run_id, body.decision, body.comment)
+    return await submit_review(request.app, run_id, body.gate, body.decision, body.comment)
 
 
 # ---------------------------------------------------------------- review from the email link
@@ -241,7 +252,7 @@ def _page(title: str, body_html: str, status: int = 200) -> HTMLResponse:
 @app.get("/review/{token}", response_class=HTMLResponse, include_in_schema=False)
 async def review_page(token: str, request: Request):
     try:
-        run_id = notifier.read_token(token)
+        run_id, gate = notifier.read_token(token)
     except notifier.TokenError:
         return _page("Link not valid", "<h2>This link is not valid or has expired.</h2>", 400)
     run = await db.get_run(request.app.state.pool, run_id)
@@ -251,14 +262,29 @@ async def review_page(token: str, request: Request):
         outcome = f" ({esc(run['outcome'])})" if run.get("outcome") else ""
         return _page("Already handled", f"<h2>Nothing to review.</h2><p>This run is {esc(run['status'])}{outcome}.</p>", 409)
     p = run.get("pending_review") or {}
+    if p.get("gate") != gate:
+        return _page(
+            "Link is out of date",
+            "<h2>This link is for an earlier review.</h2><p>The run has moved on. Use the link in the newest email.</p>",
+            409,
+        )
     # Everything below came from a model or a user, so it is escaped before it goes into HTML.
+    earlier = (
+        f"<p>This attempt was asked to address your earlier comment:</p><div class='box'>{esc(str(p['previous_feedback']))}</div>"
+        if p.get("previous_feedback")
+        else ""
+    )
     body = (
-        f"<h2>Review needed</h2><p>Run <code>{esc(run_id)}</code><br>"
-        f"Judge verdict: <b>{esc(str(p.get('verdict')))}</b> (stopped because: {esc(str(p.get('stop_reason')))})<br>"
+        f"<h2>Review needed: {esc(str(p.get('title')))}</h2>"
+        f"<p>Run <code>{esc(run_id)}</code><br>"
+        f"Step {esc(str(p.get('step')))} of {esc(str(p.get('total_steps')))}, "
+        f"attempt {esc(str(p.get('attempt')))} of {esc(str(p.get('max_attempts')))}<br>"
         f"Tokens: {esc(str(p.get('tokens_used')))} of {esc(str(p.get('token_budget')))}</p>"
-        f"<div class='box'>{esc(str(p.get('answer', '')))}</div>"
+        f"{earlier}"
+        f"<div class='box'>{esc(str(p.get('output', '')))}</div>"
         "<form method='post'>"
-        "<p><label>Comment (optional)<br><textarea name='comment' rows='3' maxlength='2000'></textarea></label></p>"
+        "<p><label>Comment (if you reject, say what to fix: the same agent will read it)<br>"
+        "<textarea name='comment' rows='3' maxlength='2000'></textarea></label></p>"
         "<button name='decision' value='approve'>Approve</button>"
         "<button name='decision' value='reject'>Reject</button>"
         "</form>"
@@ -269,13 +295,13 @@ async def review_page(token: str, request: Request):
 @app.post("/review/{token}", response_class=HTMLResponse, include_in_schema=False)
 async def review_submit(token: str, request: Request, decision: str = Form(...), comment: str = Form("")):
     try:
-        run_id = notifier.read_token(token)
+        run_id, gate = notifier.read_token(token)
     except notifier.TokenError:
         return _page("Link not valid", "<h2>This link is not valid or has expired.</h2>", 400)
     if decision not in ("approve", "reject") or len(comment) > 2000:
         return _page("Invalid", "<h2>Invalid form.</h2>", 400)
     try:
-        await submit_review(request.app, run_id, decision, comment)
+        await submit_review(request.app, run_id, gate, decision, comment)
     except HTTPException as exc:
         return _page("Not recorded", f"<h2>Not recorded.</h2><p>{esc(str(exc.detail))}</p>", exc.status_code)
     word = "Approved" if decision == "approve" else "Rejected"

@@ -65,7 +65,7 @@ def make_token(run_id: str, gate: str, ttl: int | None = None, now: float | None
     """run_id + gate + expiry, signed with HMAC. Anyone can read it, nobody can change it without
     the secret.
 
-    The GATE (which review: "designer:2" = the designer's second attempt) is part of the link
+    The GATE (which review: "design_plan:2" = the design stage's second attempt) is part of the link
     because one run now has several reviews. A link from an earlier email must not be able to
     approve a LATER review of the same run. app.py checks the gate against the run's current one.
     """
@@ -131,14 +131,22 @@ async def notify_review_needed(run_id: str, payload: dict) -> None:
         if payload.get("previous_feedback")
         else ""
     )
+    # Names and sizes only. The files themselves are read on the review page, not in the inbox.
+    files = "".join(
+        f"  {a.get('path')}  ({a.get('bytes')} bytes, sha256 {str(a.get('sha256', ''))[:12]})\n"
+        for a in payload.get("artifacts", [])
+    )
+    files = f"Files:\n{files}\n" if files else ""
     body = (
         "A run is waiting for your review.\n\n"
         f"Run:      {run_id}\n"
         f"Stage:    {where}\n"
         f"Attempt:  {payload.get('attempt')} of {payload.get('max_attempts')}\n"
-        f"Tokens:   {payload.get('tokens_used')} of {payload.get('token_budget')}\n\n"
+        f"Tokens:   {payload.get('attempt_tokens')} this attempt, "
+        f"{payload.get('tokens_used')} of {payload.get('token_budget')} in total\n\n"
         f"{earlier}"
         f"Result:\n{output}\n\n"
+        f"{files}"
         "Open this page to approve or reject:\n"
         f"{link}\n\n"
         f"The link works for {hours} hours. Opening it changes nothing; you confirm on the page.\n"

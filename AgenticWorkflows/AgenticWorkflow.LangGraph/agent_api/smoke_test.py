@@ -8,6 +8,7 @@ handoffs, retries. Part B tests the real API against Postgres, which must be run
 Two tracebacks in the output ("smtp down", "boom") are deliberate failure tests.
 """
 import asyncio
+import hashlib
 import os
 import re
 import sys
@@ -83,18 +84,18 @@ def part_a():
     # A2. reject one stage: ONLY that agent runs again, with the comment; nothing else repeats
     rec = Recorder()
 
-    def reject_designer_once(p):
-        if p["stage"] == "designer" and p["attempt"] == 1:
+    def reject_design_plan_once(p):
+        if p["stage"] == "design_plan" and p["attempt"] == 1:
             return "reject", "add error codes"
         return "approve", ""
 
-    res, gates = asyncio.run(run_pipeline(reject_designer_once, runner=rec))
-    assert [p["stage"] for p in gates] == ["spec_analyst", "designer", "designer", "implementer", "test_engineer", "reviewer"]
-    assert gates[2]["attempt"] == 2 and gates[2]["gate"] == "designer:2" and gates[2]["previous_feedback"] == "add error codes"
-    assert len(rec.for_stage("spec_analyst")) == 1 and len(rec.for_stage("designer")) == 2
-    assert [c.feedback for c in rec.for_stage("designer")] == ["", "add error codes"]
-    assert rec.for_stage("implementer")[0].feedback == ""          # cleared once the designer was approved
-    assert res["outcome"] == "APPROVED" and res["attempts"]["designer"] == 2
+    res, gates = asyncio.run(run_pipeline(reject_design_plan_once, runner=rec))
+    assert [p["stage"] for p in gates] == ["intake_check", "design_plan", "design_plan", "implementer", "test_engineer", "reviewer"]
+    assert gates[2]["attempt"] == 2 and gates[2]["gate"] == "design_plan:2" and gates[2]["previous_feedback"] == "add error codes"
+    assert len(rec.for_stage("intake_check")) == 1 and len(rec.for_stage("design_plan")) == 2
+    assert [c.feedback for c in rec.for_stage("design_plan")] == ["", "add error codes"]
+    assert rec.for_stage("implementer")[0].feedback == ""          # cleared once the design_plan was approved
+    assert res["outcome"] == "APPROVED" and res["attempts"]["design_plan"] == 2
     assert [h["decision"] for h in res["history"]] == ["approve", "reject", "approve", "approve", "approve", "approve"]
     print("A2 reject -> same agent reruns with the comment; other stages untouched")
 
@@ -104,16 +105,16 @@ def part_a():
         lambda p: ("reject", f"still wrong {p['attempt']}") if p["stage"] == "implementer" else ("approve", ""), runner=rec))
     assert (res["outcome"], res["stop_reason"], res["stopped_at"]) == ("REJECTED", "max_rejects", "implementer")
     assert res["attempts"]["implementer"] == g.MAX_ATTEMPTS_PER_STAGE
-    assert not rec.for_stage("test_engineer") and set(res["approved"]) == {"spec_analyst", "designer"}
+    assert not rec.for_stage("test_engineer") and set(res["approved"]) == {"intake_check", "design_plan"}
     print("A3 rejected", g.MAX_ATTEMPTS_PER_STAGE, "times -> REJECTED at", res["stopped_at"])
 
     # A4. token budget stops the run between stages
     rec = Recorder()
     res, _ = asyncio.run(run_pipeline(approve_all, runner=rec, budget=2000))
-    assert (res["outcome"], res["stop_reason"], res["stopped_at"]) == ("STOPPED_BUDGET", "budget", "designer")
+    assert (res["outcome"], res["stop_reason"], res["stopped_at"]) == ("STOPPED_BUDGET", "budget", "design_plan")
     assert not rec.for_stage("implementer") and res["tokens_used"] == 900 + 1300
     res, _ = asyncio.run(run_pipeline(lambda p: ("reject", "no"), budget=1000))   # budget also ends reject loops
-    assert res["outcome"] == "STOPPED_BUDGET" and res["attempts"]["spec_analyst"] == 2   # stopped before the 3rd try
+    assert res["outcome"] == "STOPPED_BUDGET" and res["attempts"]["intake_check"] == 2   # stopped before the 3rd try
     print("A4 budget stops the run (after approve and in a reject loop)")
 
     # A5. handoff = the previous stage's SHORT summary, nothing else
@@ -150,7 +151,7 @@ def part_a():
     state = {"n": 0}
 
     async def flaky(req):
-        if req.stage == "designer":
+        if req.stage == "design_plan":
             state["n"] += 1
             if state["n"] == 1:
                 raise TimeoutError("provider timed out")
@@ -159,7 +160,7 @@ def part_a():
     rec = Recorder(flaky)
     res, gates = asyncio.run(run_pipeline(approve_all, runner=rec))
     assert state["n"] == 2 and res["outcome"] == "APPROVED"
-    assert res["attempts"]["designer"] == 1 and gates[1]["attempt"] == 1   # a retry is not a new attempt
+    assert res["attempts"]["design_plan"] == 1 and gates[1]["attempt"] == 1   # a retry is not a new attempt
 
     async def buggy(req):
         state["bug"] = state.get("bug", 0) + 1
@@ -259,6 +260,9 @@ with TestClient(app) as client:   # the `with` keeps the app (and its background
     assert client.post("/v1/runs", json={"question": "old field name"}).status_code == 422
     assert client.post("/v1/runs", json={"requirement": ""}).status_code == 422
     assert client.post("/v1/runs", json={"requirement": "x", "token_budget": 0}).status_code == 422
+    assert client.post("/v1/runs", json={"requirement": "x", "solution_type": "mainframe"}).status_code == 422
+    assert client.post("/v1/runs", json={"requirement": "x", "platform": "net6"}).status_code == 422
+    assert client.post("/v1/runs", json={"requirement": "x", "data_schema": "s" * 20001}).status_code == 422
     assert client.get("/v1/runs/run_missing").status_code == 404
     assert client.post("/v1/runs/run_missing/review", json={"gate": "a:1", "decision": "approve"}).status_code == 404
     print("B1 validation: 422 for bad input, 404 for unknown runs")
@@ -266,7 +270,7 @@ with TestClient(app) as client:   # the `with` keeps the app (and its background
     # B2. a whole run over HTTP, five reviews, then a late review of a finished run
     run_id = start(client)
     first = next_gate(client, run_id)
-    assert first["status"] == "WAITING_REVIEW" and first["next_node"] == ["spec_analyst_review"]
+    assert first["status"] == "WAITING_REVIEW" and first["next_node"] == ["intake_check_review"]
     assert first["pending_review"]["step"] == 1 and first["pending_review"]["total_steps"] == 5
     r1 = answer(client, run_id, first, "approve", "looks right")
     r2 = answer(client, run_id, first, "approve")           # the same click again (same gate)
@@ -280,30 +284,40 @@ with TestClient(app) as client:   # the `with` keeps the app (and its background
     assert answer(client, run_id, first, "approve").status_code == 409
     print("B2 full run: 5 reviews, double click -> 409, finished run -> 409; outcome", body["outcome"])
 
+    # B2b. structured inputs reach the graph state; defaults apply when they are left out
+    rid_in = start(client, requirement="structured", data_schema="CREATE TABLE t(id int);",
+                   solution_type="api", platform="net10", constraints="no libraries")
+    st = next_gate(client, rid_in)["state"]
+    assert st["profile"] == "dotnet-net10-api" and st["data_schema"].startswith("CREATE TABLE")
+    assert st["constraints"] == "no libraries"
+    st_default = next_gate(client, start(client))["state"]
+    assert st_default["profile"] == "dotnet-net9-console" and st_default["data_schema"] == ""
+    print("B2b structured inputs: profile built from solution type + platform, defaults console / .NET 9")
+
     # B3. reject over HTTP: the same stage comes back with the comment
     run_id = start(client)
     seen_state = {}
 
-    def reject_designer_once(p):
-        if p["stage"] == "designer" and p["attempt"] == 1:
+    def reject_design_plan_once(p):
+        if p["stage"] == "design_plan" and p["attempt"] == 1:
             return "reject", "add error codes"
         return "approve", ""
 
-    body, seen = drive(client, run_id, reject_designer_once)
-    again = [p for p in seen if p["gate"] == "designer:2"][0]
+    body, seen = drive(client, run_id, reject_design_plan_once)
+    again = [p for p in seen if p["gate"] == "design_plan:2"][0]
     assert again["previous_feedback"] == "add error codes" and "add error codes" in again["output"]
-    assert body["outcome"] == "APPROVED" and body["state"]["attempts"]["designer"] == 2
-    print("B3 reject -> designer:2 reviewed with the comment, run still APPROVED")
+    assert body["outcome"] == "APPROVED" and body["state"]["attempts"]["design_plan"] == 2
+    print("B3 reject -> design_plan:2 reviewed with the comment, run still APPROVED")
 
     # B4. rejected too often, and token budget, over HTTP
     run_id = start(client)
     body, seen = drive(client, run_id, lambda p: ("reject", "no good"))
     assert body["status"] == "COMPLETED" and body["outcome"] == "REJECTED"
-    assert body["result"]["stop_reason"] == "max_rejects" and body["result"]["stopped_at"] == "spec_analyst"
-    assert [p["gate"] for p in seen] == ["spec_analyst:1", "spec_analyst:2", "spec_analyst:3"]
+    assert body["result"]["stop_reason"] == "max_rejects" and body["result"]["stopped_at"] == "intake_check"
+    assert [p["gate"] for p in seen] == ["intake_check:1", "intake_check:2", "intake_check:3"]
     run_b = start(client, token_budget=2000)
     body, seen = drive(client, run_b)
-    assert body["outcome"] == "STOPPED_BUDGET" and body["result"]["stopped_at"] == "designer" and len(seen) == 2
+    assert body["outcome"] == "STOPPED_BUDGET" and body["result"]["stopped_at"] == "design_plan" and len(seen) == 2
     print("B4 max rejects -> REJECTED; token budget -> STOPPED_BUDGET")
 
     # B5. stale reviews cannot touch a later review (the multi-gate danger)
@@ -311,11 +325,11 @@ with TestClient(app) as client:   # the `with` keeps the app (and its background
     g1 = next_gate(client, run_id)
     assert answer(client, run_id, g1, "approve").status_code == 202
     g2 = next_gate(client, run_id, after=g1["pending_review"]["gate"])
-    assert g2["pending_review"]["gate"] == "designer:1"
+    assert g2["pending_review"]["gate"] == "design_plan:1"
     late = answer(client, run_id, g1, "approve")             # a late repeat of the FIRST review
     assert late.status_code == 409 and "no longer current" in late.json()["detail"], late.text
     still = client.get(f"/v1/runs/{run_id}").json()
-    assert still["status"] == "WAITING_REVIEW" and still["pending_review"]["gate"] == "designer:1"
+    assert still["status"] == "WAITING_REVIEW" and still["pending_review"]["gate"] == "design_plan:1"
     print("B5 a late click on review 1 cannot approve review 2")
     drive(client, run_id, first=g2)
 
@@ -329,13 +343,13 @@ with TestClient(app) as client:   # the `with` keeps the app (and its background
     path1 = re.search(r"/review/\S+", mail_body).group(0)
 
     page = client.get(path1)
-    assert page.status_code == 200 and "Approve" in page.text and "Reject" in page.text and "Spec analyst" in page.text
+    assert page.status_code == 200 and "Approve" in page.text and "Reject" in page.text and "Intake check" in page.text
     assert "Step 1 of 5" in page.text
     assert "<script>alert" not in page.text and "&lt;script&gt;" in page.text   # model/user text is escaped
-    assert client.get(f"/v1/runs/{run_e}").json()["pending_review"]["gate"] == "spec_analyst:1"   # opening it changed nothing
+    assert client.get(f"/v1/runs/{run_e}").json()["pending_review"]["gate"] == "intake_check:1"   # opening it changed nothing
 
     assert client.get(path1[:-3] + "abc").status_code == 400                       # tampered link
-    expired = "/review/" + notifier.make_token(run_e, "spec_analyst:1", ttl=-10)
+    expired = "/review/" + notifier.make_token(run_e, "intake_check:1", ttl=-10)
     assert client.get(expired).status_code == 400 and client.post(expired, data={"decision": "approve"}).status_code == 400
     assert client.post(path1, data={"decision": "maybe"}).status_code == 400       # bad form value
 
@@ -350,9 +364,9 @@ with TestClient(app) as client:   # the `with` keeps the app (and its background
     old_get, old_post = client.get(path1), client.post(path1, data={"decision": "approve"})
     assert old_get.status_code == 409 and "earlier review" in old_get.text          # the stale link is refused
     assert old_post.status_code == 409
-    assert client.get(f"/v1/runs/{run_e}").json()["pending_review"]["gate"] == "designer:1"   # review 2 untouched
+    assert client.get(f"/v1/runs/{run_e}").json()["pending_review"]["gate"] == "design_plan:1"   # review 2 untouched
     assert client.post(path2, data={"decision": "reject", "comment": "needs <b>more</b>"}).status_code == 200
-    wait_until(lambda: len(sent) > mails + 1)                                      # designer:2 mail, shows the comment
+    wait_until(lambda: len(sent) > mails + 1)                                      # design_plan:2 mail, shows the comment
     assert "needs <b>more</b>" in sent[-1][2] and "attempt 2/3" in sent[-1][1]
     page3 = client.get(re.search(r"/review/\S+", sent[-1][2]).group(0))
     assert "needs &lt;b&gt;more&lt;/b&gt;" in page3.text and "needs <b>more</b>" not in page3.text
@@ -403,15 +417,15 @@ with TestClient(app) as c1:
     a = next_gate(c1, rid)
     assert answer(c1, rid, a, "approve").status_code == 202
     b = next_gate(c1, rid, after=a["pending_review"]["gate"])
-    assert b["pending_review"]["gate"] == "designer:1"
+    assert b["pending_review"]["gate"] == "design_plan:1"
     time.sleep(0.3)   # let the mail step finish before shutdown
 # the with-block ended: the app shut down and everything held in memory is gone
 with TestClient(app) as c2:   # a fresh startup: new pool, saver and graph
     after = c2.get(f"/v1/runs/{rid}").json()
-    assert after["status"] == "WAITING_REVIEW" and after["next_node"] == ["designer_review"], after
-    assert "spec_analyst" in after["state"]["approved"] and after["pending_review"]["gate"] == "designer:1"
+    assert after["status"] == "WAITING_REVIEW" and after["next_node"] == ["design_plan_review"], after
+    assert "intake_check" in after["state"]["approved"] and after["pending_review"]["gate"] == "design_plan:1"
     assert answer(c2, rid, after, "approve").status_code == 202    # the same gate still works after the restart
-    finished, seen = drive(c2, rid, first=next_gate(c2, rid, after="designer:1"))
+    finished, seen = drive(c2, rid, first=next_gate(c2, rid, after="design_plan:1"))
     assert finished["outcome"] == "APPROVED" and finished["state"]["attempts"] == {k: 1 for k in KEYS}
 print("B9 restart in the middle of the pipeline: stage 1 approved, resumed at stage 2, finished")
 
@@ -439,21 +453,68 @@ async def race():
         stamp = int(time.time() * 1000)
         race_id = f"run_race_{stamp}"
         await db.insert_run(pool, race_id)
-        await db.mark_waiting(pool, race_id, {"gate": "designer:1"})
-        same = await asyncio.gather(*[db.claim_for_review(pool, race_id, "designer:1") for _ in range(10)])
+        full = {"gate": "design_plan:1", "stage": "design_plan", "attempt": 1, "attempt_tokens": 1300, "tokens_used": 2200,
+                "artifacts": [{"path": "design.md", "sha256": "abc"}]}
+        await db.mark_waiting(pool, race_id, full)
+        same = await asyncio.gather(
+            *[db.claim_for_review(pool, race_id, "design_plan:1", "approve", "", "api") for _ in range(10)]
+        )
+        rows = await db.list_audit(pool, race_id)
         other_id = f"run_gate_{stamp}"
         await db.insert_run(pool, other_id)
-        await db.mark_waiting(pool, other_id, {"gate": "designer:2"})
-        wrong = await db.claim_for_review(pool, other_id, "designer:1")
-        right = await db.claim_for_review(pool, other_id, "designer:2")
-        return same, wrong, right
+        await db.mark_waiting(pool, other_id, dict(full, gate="design_plan:2", attempt=2))
+        wrong = await db.claim_for_review(pool, other_id, "design_plan:1", "approve", "", "api")
+        wrong_rows = await db.list_audit(pool, other_id)
+        right = await db.claim_for_review(pool, other_id, "design_plan:2", "reject", "why", "email_link")
+        return same, wrong, right, rows, wrong_rows
     finally:
         await pool.close()
 
 
-same, wrong, right = asyncio.run(race())
+same, wrong, right, rows, wrong_rows = asyncio.run(race())
 assert same.count("claimed") == 1 and same.count("RUNNING") == 9, same
 assert (wrong, right) == ("stale_gate", "claimed")
+assert len(rows) == 1 and rows[0]["attempt_tokens"] == 1300 and rows[0]["tokens_used"] == 2200, rows
+assert wrong_rows == []
 print("B11 race: 10 simultaneous reviews ->", same.count("claimed"), "claimed,", same.count("RUNNING"), "told it is RUNNING; wrong gate ->", wrong)
+
+
+# B12. audit log and artifacts over a real run: design_plan rejected once, then everything approved
+from graph import prepare_artifacts
+from agents import Artifact
+
+for bad in ("../x", "/etc/x", "a//b", "C:\\x", ""):
+    try:
+        prepare_artifacts([Artifact(bad, "x")])
+        raise AssertionError(f"accepted {bad!r}")
+    except ValueError:
+        pass
+
+with TestClient(app) as client:
+    mails = len(sent)
+    rid = start(client, requirement="audit me")
+    wait_until(lambda: len(sent) > mails)
+    assert "Contents of spec.md" not in sent[-1][2] and "spec.md" in sent[-1][2]    # mail: names only
+    assert "900 this attempt" in sent[-1][2]
+    page = client.get(re.search(r"/review/\S+", sent[-1][2]).group(0))
+    assert "Contents of spec.md" in page.text                                       # page: the file itself
+    assert client.post(re.search(r"/review/\S+", sent[-1][2]).group(0), data={"decision": "approve"}).status_code == 200
+    body, _ = drive(client, rid, reject_design_plan_once)
+    audit = client.get(f"/v1/runs/{rid}/audit").json()
+    assert [(a["gate"], a["decision"]) for a in audit][:3] == [
+        ("intake_check:1", "approve"), ("design_plan:1", "reject"), ("design_plan:2", "approve")], audit
+    assert audit[0]["via"] == "email_link" and audit[1]["via"] == "api" and audit[1]["comment"] == "add error codes"
+    # tokens: each attempt records its own cost, and the running total keeps growing
+    assert [a["attempt_tokens"] for a in audit] == [900, 1300, 1300, 4200, 2600, 1100], audit
+    assert [a["tokens_used"] for a in audit] == [900, 2200, 3500, 7700, 10300, 11400], audit
+    files = client.get(f"/v1/runs/{rid}/artifacts").json()
+    assert [(f["stage"], f["attempt"]) for f in files if f["stage"] == "design_plan"] == [("design_plan", 1), ("design_plan", 2)]
+    for f in files:
+        text = client.get(f"/v1/runs/{rid}/artifacts/{f['id']}")
+        assert hashlib.sha256(text.content).hexdigest() == f["sha256"]
+        assert text.headers["x-content-type-options"] == "nosniff"
+    assert audit[0]["artifact_hashes"][0]["sha256"] == files[0]["sha256"]
+    assert client.get(f"/v1/runs/{rid}/artifacts/999999999").status_code == 404
+print("B12 audit: one row per decision with via, comment, tokens per attempt; artifacts kept per attempt, hashes match")
 
 print("ALL CHECKS PASSED")

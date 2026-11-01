@@ -9,7 +9,8 @@ Run:
     python run.py                     # on Windows use this, not plain `uvicorn app:app`
 
 Endpoints:
-    POST /v1/runs                 start a run (body: requirement)  -> 202 + run_id
+    POST /v1/runs                 start a run (body: requirement, optional data_schema, solution_type,
+                                  platform, constraints, token_budget)  -> 202 + run_id
     GET  /v1/runs/{run_id}        status + live state  -> QUEUED / RUNNING / WAITING_REVIEW / COMPLETED / FAILED
     POST /v1/runs/{run_id}/review approve or reject the CURRENT stage -> 202, the graph resumes in the background
                                   (reject needs a useful comment: the same agent gets it and tries again)
@@ -30,7 +31,7 @@ so moving to a worker queue (Level 2) later means changing only that function.
 Known limits of this step (fixed in later steps):
     - Keep ONE server process: background tasks live in the process, and at startup any run still
       RUNNING is assumed dead and marked FAILED.
-    - No auth, no Idempotency-Key, no audit table yet.
+    - No auth and no Idempotency-Key yet.
 """
 import asyncio
 import logging
@@ -42,7 +43,7 @@ from html import escape as esc
 from typing import Literal
 
 from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.types import Command
 from psycopg.rows import dict_row
@@ -53,13 +54,16 @@ import db
 import notifier
 from agents import STAGES
 from graph import DEFAULT_TOKEN_BUDGET, MAX_ATTEMPTS_PER_STAGE, build_graph
+from profiles import profile_key
+from sdk_runner import select_runner
 
 log = logging.getLogger("app")
 # Last-resort cap on graph steps PER CALL to the graph. The worst legitimate run is every stage
 # running its maximum attempts: (agent + review) x attempts x stages, plus `finish`. A routing bug
 # that loops would hit this instead of spending tokens forever.
 RECURSION_LIMIT = 2 * len(STAGES) * MAX_ATTEMPTS_PER_STAGE + 10
-DEFAULT_DATABASE_URL = "postgresql://agent:agent@127.0.0.1:5432/agentdb"   # matches docker-compose.yml
+PAGE_FILE_CHARS = 4000   # how much of one file the review page shows; the rest is one click away
+DEFAULT_DATABASE_URL ="postgresql://agent:agent@127.0.0.1:5432/agentdb"   # matches docker-compose.yml
 TASKS: set[asyncio.Task] = set()  # strong references, so running tasks are not garbage-collected
 
 
@@ -101,7 +105,7 @@ async def lifespan(app: FastAPI):
         if stale:
             log.warning("marked %d interrupted run(s) as FAILED", stale)
         app.state.pool = pool
-        app.state.graph = build_graph(checkpointer)   # built ONCE, shared by every request
+        app.state.graph = build_graph(checkpointer, select_runner())   # built ONCE, shared by every request
         yield
     finally:
         await pool.close()
@@ -114,6 +118,10 @@ app = FastAPI(title="Agent workflow API", lifespan=lifespan)
 
 class StartRun(BaseModel):
     requirement: str = Field(min_length=1, max_length=4000)
+    data_schema: str = Field(default="", max_length=20000)    # optional: SQL or an entity description
+    solution_type: Literal["console", "api", "webapp"] = "console"
+    platform: Literal["net9", "net10"] = "net9"
+    constraints: str = Field(default="", max_length=2000)     # optional extra rules
     token_budget: int = Field(default=DEFAULT_TOKEN_BUDGET, ge=1, le=1_000_000)  # per-run cap
 
 
@@ -123,6 +131,30 @@ class Review(BaseModel):
     gate: str = Field(min_length=1, max_length=100)
     decision: Literal["approve", "reject"]
     comment: str = Field(default="", max_length=2000)
+
+
+class AuditOut(BaseModel):
+    id: int
+    gate: str
+    stage: str
+    attempt: int
+    decision: Literal["approve", "reject"]
+    comment: str
+    via: Literal["api", "email_link"]
+    attempt_tokens: int | None = None   # what the attempt under review cost
+    tokens_used: int | None = None      # running total of the run at that moment
+    artifact_hashes: list[dict]   # [{path, sha256}] of the files the reviewer saw
+    created_at: str
+
+
+class ArtifactOut(BaseModel):
+    id: int
+    stage: str
+    attempt: int
+    path: str
+    sha256: str
+    bytes: int
+    created_at: str
 
 
 class RunOut(BaseModel):
@@ -171,6 +203,8 @@ async def _execute(app: FastAPI, run_id: str, graph_input) -> None:
         if "__interrupt__" in result:
             # The graph paused at interrupt(). Nothing is running now, the state is saved.
             payload = result["__interrupt__"][0].value
+            # Files first, then the status: nobody can see "waiting" before the files they must read are stored.
+            await db.save_artifacts(pool, run_id, payload["stage"], payload["attempt"], payload.get("artifacts", []))
             await db.mark_waiting(pool, run_id, payload)
             # Mail goes out AFTER the status flips, so a quick click never meets a 409.
             await _notify(run_id, payload)
@@ -194,7 +228,15 @@ async def create_run(body: StartRun, request: Request):
     start_run(
         request.app,
         run_id,
-        {"requirement": body.requirement, "tokens_used": 0, "token_budget": body.token_budget},
+        {
+            "run_id": run_id,
+            "requirement": body.requirement,
+            "data_schema": body.data_schema,
+            "profile": profile_key(body.solution_type, body.platform),
+            "constraints": body.constraints,
+            "tokens_used": 0,
+            "token_budget": body.token_budget,
+        },
     )
     return run
 
@@ -208,11 +250,12 @@ async def get_run(run_id: str, request: Request):
     return RunOut(**run, state=snapshot.values or None, next_node=list(snapshot.next))
 
 
-async def submit_review(app: FastAPI, run_id: str, gate: str, decision: str, comment: str) -> dict:
-    """The ONE place a review is accepted. Used by the JSON endpoint and by the email page.
-    The database makes the check-and-change atomic (db.claim_for_review): of any number of
-    simultaneous decisions for the same gate, exactly one is 'claimed'; the others get 409."""
-    outcome = await db.claim_for_review(app.state.pool, run_id, gate)
+async def submit_review(app: FastAPI, run_id: str, gate: str, decision: str, comment: str, via: str) -> dict:
+    """The ONE place a review is accepted. Used by the JSON endpoint (via='api') and by the email
+    page (via='email_link'). The database makes the check-change-and-record atomic
+    (db.claim_for_review): of any number of simultaneous decisions for the same gate, exactly one
+    is 'claimed' and gets its audit row; the others get 409."""
+    outcome = await db.claim_for_review(app.state.pool, run_id, gate, decision, comment, via)
     if outcome == "not_found":
         raise HTTPException(404, "Run not found")
     if outcome == "stale_gate":
@@ -225,7 +268,40 @@ async def submit_review(app: FastAPI, run_id: str, gate: str, decision: str, com
 
 @app.post("/v1/runs/{run_id}/review", response_model=RunOut, status_code=202)
 async def review_run(run_id: str, body: Review, request: Request):
-    return await submit_review(request.app, run_id, body.gate, body.decision, body.comment)
+    return await submit_review(request.app, run_id, body.gate, body.decision, body.comment, "api")
+
+
+@app.get("/v1/runs/{run_id}/audit", response_model=list[AuditOut])
+async def run_audit(run_id: str, request: Request):
+    """Every review decision of the run, oldest first: who (how), which review, what, which comment."""
+    if await db.get_run(request.app.state.pool, run_id) is None:
+        raise HTTPException(404, "Run not found")
+    return await db.list_audit(request.app.state.pool, run_id)
+
+
+@app.get("/v1/runs/{run_id}/artifacts", response_model=list[ArtifactOut])
+async def run_artifacts(run_id: str, request: Request):
+    """The files of every attempt of the run (without content; fetch one by id)."""
+    if await db.get_run(request.app.state.pool, run_id) is None:
+        raise HTTPException(404, "Run not found")
+    return await db.list_artifacts(request.app.state.pool, run_id)
+
+
+@app.get("/v1/runs/{run_id}/artifacts/{artifact_id}", response_class=PlainTextResponse)
+async def run_artifact(run_id: str, artifact_id: int, request: Request):
+    """One file's content as plain text. Served as text only, never as a page, because an agent wrote it."""
+    row = await db.get_artifact(request.app.state.pool, run_id, artifact_id)
+    if row is None:
+        raise HTTPException(404, "File not found")
+    return PlainTextResponse(
+        row["content"],
+        headers={
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "default-src 'none'",
+            "X-Artifact-Sha256": row["sha256"],
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 # ---------------------------------------------------------------- review from the email link
@@ -274,14 +350,29 @@ async def review_page(token: str, request: Request):
         if p.get("previous_feedback")
         else ""
     )
+    stored = {
+        a["path"]: a["id"]
+        for a in await db.list_artifacts(request.app.state.pool, run_id)
+        if a["stage"] == p.get("stage") and a["attempt"] == p.get("attempt")
+    }
+    files = ""
+    for a in p.get("artifacts", []):
+        path, text = str(a.get("path", "")), str(a.get("content", ""))
+        more = f"<p>Showing the first {PAGE_FILE_CHARS} of {len(text)} characters.</p>" if len(text) > PAGE_FILE_CHARS else ""
+        full = f" &middot; <a href='/v1/runs/{esc(run_id)}/artifacts/{stored[path]}'>full file</a>" if path in stored else ""
+        files += (
+            f"<h3>{esc(path)} <small>sha256 {esc(str(a.get('sha256', ''))[:12])}{full}</small></h3>"
+            f"<div class='box'>{esc(text[:PAGE_FILE_CHARS])}</div>{more}"
+        )
     body = (
         f"<h2>Review needed: {esc(str(p.get('title')))}</h2>"
         f"<p>Run <code>{esc(run_id)}</code><br>"
         f"Step {esc(str(p.get('step')))} of {esc(str(p.get('total_steps')))}, "
         f"attempt {esc(str(p.get('attempt')))} of {esc(str(p.get('max_attempts')))}<br>"
-        f"Tokens: {esc(str(p.get('tokens_used')))} of {esc(str(p.get('token_budget')))}</p>"
+        f"Tokens: {esc(str(p.get('attempt_tokens')))} this attempt, {esc(str(p.get('tokens_used')))} of {esc(str(p.get('token_budget')))}</p>"
         f"{earlier}"
         f"<div class='box'>{esc(str(p.get('output', '')))}</div>"
+        f"{files}"
         "<form method='post'>"
         "<p><label>Comment (if you reject, say what to fix: the same agent will read it)<br>"
         "<textarea name='comment' rows='3' maxlength='2000'></textarea></label></p>"
@@ -301,7 +392,7 @@ async def review_submit(token: str, request: Request, decision: str = Form(...),
     if decision not in ("approve", "reject") or len(comment) > 2000:
         return _page("Invalid", "<h2>Invalid form.</h2>", 400)
     try:
-        await submit_review(request.app, run_id, gate, decision, comment)
+        await submit_review(request.app, run_id, gate, decision, comment, "email_link")
     except HTTPException as exc:
         return _page("Not recorded", f"<h2>Not recorded.</h2><p>{esc(str(exc.detail))}</p>", exc.status_code)
     word = "Approved" if decision == "approve" else "Rejected"

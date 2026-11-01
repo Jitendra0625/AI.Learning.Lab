@@ -1,7 +1,7 @@
 """
 The pipeline: five agents in a row, a human review gate after each one.
 
-    spec_analyst -> spec_analyst_review -> designer -> designer_review -> ... -> reviewer_review -> finish
+    intake_check -> intake_check_review -> design_plan -> design_plan_review -> ... -> reviewer_review -> finish
                          |  reject (with a comment): back to the SAME agent, up to MAX_ATTEMPTS_PER_STAGE
                          |  approve: on to the next agent
 
@@ -21,6 +21,7 @@ Rules this file follows:
 Console demo:   python graph.py            (answer the review prompts by typing)
 Diagram:        python graph.py --mermaid  (paste the output into any Mermaid viewer / README)
 """
+import hashlib
 import operator
 import sys
 from typing import Annotated, TypedDict
@@ -34,9 +35,38 @@ from agents import STAGES, AgentRequest, AgentRunner, fake_runner
 MAX_ATTEMPTS_PER_STAGE = 3
 DEFAULT_TOKEN_BUDGET = 150_000
 MAX_SUMMARY_CHARS = 600        # a handoff is a short summary, enforced here in code
+MAX_ARTIFACTS_PER_ATTEMPT = 20
+MAX_ARTIFACT_CHARS = 100_000   # per file. The state is saved at every step, so files must stay modest.
 
 # Transient errors only. Do NOT retry bugs. Add the provider's rate-limit exception later.
 TRANSIENT = RetryPolicy(max_attempts=3, retry_on=(TimeoutError, ConnectionError))
+
+
+def prepare_artifacts(artifacts) -> list[dict]:
+    """Check the files an agent returned and add a SHA-256 to each.
+
+    A bad path or an oversized file is an ERROR (the run fails with a clear message), never a
+    silent cut: a reviewer must be able to trust that the file shown is the file produced.
+    ValueError is not retried by the node's retry policy.
+    """
+    if len(artifacts) > MAX_ARTIFACTS_PER_ATTEMPT:
+        raise ValueError(f"an agent returned {len(artifacts)} files; the limit is {MAX_ARTIFACTS_PER_ATTEMPT}")
+    seen, prepared = set(), []
+    for item in artifacts:
+        path = item.path
+        parts = path.replace("\\", "/").split("/")
+        if not path or len(path) > 200 or path[0] in "/\\" or ":" in path or ".." in parts or "" in parts:
+            raise ValueError(f"unsafe artifact path: {path!r}")
+        if path in seen:
+            raise ValueError(f"the same file was returned twice: {path!r}")
+        seen.add(path)
+        if len(item.content) > MAX_ARTIFACT_CHARS:
+            raise ValueError(f"{path} is {len(item.content)} characters; the limit is {MAX_ARTIFACT_CHARS}")
+        raw = item.content.encode("utf-8")
+        prepared.append(
+            {"path": path, "content": item.content, "sha256": hashlib.sha256(raw).hexdigest(), "bytes": len(raw)}
+        )
+    return prepared
 
 
 def merge_dicts(old: dict | None, new: dict) -> dict:
@@ -46,9 +76,13 @@ def merge_dicts(old: dict | None, new: dict) -> dict:
 
 
 class PipelineState(TypedDict, total=False):
+    run_id: str                               # lets a real runner use one workspace folder per run
     requirement: str
-    drafts: Annotated[dict, merge_dicts]      # stage -> latest attempt {output, summary, attempt}
-    approved: Annotated[dict, merge_dicts]    # stage -> accepted result {output, summary}
+    data_schema: str                               # optional data schema supplied by the user
+    profile: str                              # solution profile key, for example "dotnet-net9-console"
+    constraints: str                          # optional extra rules supplied by the user
+    drafts: Annotated[dict, merge_dicts]      # stage -> latest attempt {output, summary, attempt, artifacts}
+    approved: Annotated[dict, merge_dicts]    # stage -> accepted result {output, summary, files (paths only)}
     attempts: Annotated[dict, merge_dicts]    # stage -> how many times it has run
     feedback: str                             # reviewer comment for the stage about to re-run
     last_decision: str                        # "approve" or "reject", set by a review gate
@@ -97,19 +131,34 @@ def make_agent_node(index: int, runner: AgentRunner):
 
     async def agent(state: PipelineState):
         attempt = state.get("attempts", {}).get(stage.key, 0) + 1
-        handoff = state.get("approved", {}).get(previous.key, {}).get("summary", "") if previous else ""
+        before = state.get("approved", {}).get(previous.key, {}) if previous else {}
+        handoff = before.get("summary", "")
         result = await runner(
             AgentRequest(
                 stage=stage.key,
                 title=stage.title,
                 requirement=state["requirement"],
                 handoff=handoff,
+                handoff_files=tuple(before.get("files", ())),    # paths only, never the content
                 feedback=state.get("feedback", ""),
                 attempt=attempt,
+                run_id=state.get("run_id", ""),
+                data_schema=state.get("data_schema", ""),
+                profile=state.get("profile", ""),
+                constraints=state.get("constraints", ""),
             )
         )
+        artifacts = prepare_artifacts(result.artifacts)
         return {
-            "drafts": {stage.key: {"output": result.output, "summary": result.summary[:MAX_SUMMARY_CHARS], "attempt": attempt}},
+            "drafts": {
+                stage.key: {
+                    "output": result.output,
+                    "summary": result.summary[:MAX_SUMMARY_CHARS],
+                    "attempt": attempt,
+                    "tokens": result.tokens,     # what THIS attempt cost (tokens_used is the running total)
+                    "artifacts": artifacts,
+                }
+            },
             "attempts": {stage.key: attempt},
             "tokens_used": state.get("tokens_used", 0) + result.tokens,
         }
@@ -137,7 +186,9 @@ def make_review_node(index: int):
                 "max_attempts": MAX_ATTEMPTS_PER_STAGE,
                 "output": draft["output"],
                 "summary": draft["summary"],
+                "artifacts": draft["artifacts"],        # the files the reviewer reads, each with its SHA-256
                 "previous_feedback": state.get("feedback", ""),   # what this attempt was asked to fix
+                "attempt_tokens": draft["tokens"],
                 "tokens_used": state.get("tokens_used", 0),
                 "token_budget": state.get("token_budget", DEFAULT_TOKEN_BUDGET),
                 "ask": f"Approve the {stage.title} result?",
@@ -150,10 +201,17 @@ def make_review_node(index: int):
         update = {
             "last_decision": decision,
             "last_stage": stage.key,
-            "history": [{"stage": stage.key, "attempt": draft["attempt"], "decision": decision, "comment": comment}],
+            "history": [{"stage": stage.key, "attempt": draft["attempt"], "decision": decision, "comment": comment,
+                         "attempt_tokens": draft["tokens"]}],
         }
         if decision == "approve":
-            update["approved"] = {stage.key: {"output": draft["output"], "summary": draft["summary"]}}
+            update["approved"] = {
+                stage.key: {
+                    "output": draft["output"],
+                    "summary": draft["summary"],
+                    "files": [a["path"] for a in draft["artifacts"]],   # the next stage gets paths, not content
+                }
+            }
             update["feedback"] = ""
         else:
             update["feedback"] = comment or "(rejected without a comment)"
